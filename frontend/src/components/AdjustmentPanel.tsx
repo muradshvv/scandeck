@@ -1,7 +1,8 @@
 import { Download, Clipboard, RotateCcw, SlidersHorizontal, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
+import type { RefObject } from 'react'
 import { useToast } from './ToastContext'
-import { DEFAULT_ADJUST_PARAMS, renderAdjusted } from '../lib/imageAdjust'
+import { DEFAULT_ADJUST_PARAMS } from '../lib/imageAdjust'
 import type { AdjustParams } from '../lib/imageAdjust'
 
 
@@ -70,31 +71,20 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-export function AdjustmentPanel({ imageSrc }: { imageSrc: string }) {
-  const [open, setOpen] = useState(false)
-  const [params, setParams] = useState<AdjustParams>(DEFAULT_ADJUST_PARAMS)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const imgRef = useRef<HTMLImageElement | null>(null)
-  const [imgLoaded, setImgLoaded] = useState(false)
+export function AdjustmentPanel({
+  params,
+  onParamsChange,
+  canvasRef,
+}: {
+  params: AdjustParams
+  onParamsChange: (params: AdjustParams) => void
+  canvasRef: RefObject<HTMLCanvasElement | null>
+}) {
+  const [open, setOpen] = useState(true)
   const { showToast } = useToast()
 
-  useEffect(() => {
-    const img = new Image()
-    img.onload = () => {
-      imgRef.current = img
-      setImgLoaded(true)
-    }
-    img.src = imageSrc
-    setParams(DEFAULT_ADJUST_PARAMS)
-  }, [imageSrc])
-
-  useEffect(() => {
-    if (!imgLoaded || !canvasRef.current || !imgRef.current) return
-    renderAdjusted(canvasRef.current, imgRef.current, params)
-  }, [params, imgLoaded])
-
   const set = <K extends keyof AdjustParams>(key: K, value: AdjustParams[K]) => {
-    setParams((prev) => ({ ...prev, [key]: value }))
+    onParamsChange({ ...params, [key]: value })
   }
 
   const handleDownload = () => {
@@ -138,7 +128,7 @@ export function AdjustmentPanel({ imageSrc }: { imageSrc: string }) {
           <h3 className="text-sm font-semibold text-[var(--color-text)]">Adjustments</h3>
           <div className="flex items-center gap-1">
             <button
-              onClick={() => setParams(DEFAULT_ADJUST_PARAMS)}
+              onClick={() => onParamsChange(DEFAULT_ADJUST_PARAMS)}
               title="Reset all adjustments"
               className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-[var(--color-text-muted)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)]"
             >
@@ -148,12 +138,6 @@ export function AdjustmentPanel({ imageSrc }: { imageSrc: string }) {
             <button onClick={() => setOpen(false)} className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--color-text-muted)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)]">
               <X className="h-4 w-4" />
             </button>
-          </div>
-        </div>
-
-        <div className="border-b border-[var(--color-border)] p-4">
-          <div className="flex items-center justify-center overflow-hidden rounded-lg bg-black">
-            <canvas ref={canvasRef} className="max-h-40 max-w-full object-contain" />
           </div>
         </div>
 

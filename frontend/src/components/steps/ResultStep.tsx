@@ -1,8 +1,10 @@
 import { ChevronDown, Clipboard, Download, FileText, Loader2, RefreshCcw, ScanText } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { fetchOcrText } from '../../api/client'
 import { AdjustmentPanel } from '../AdjustmentPanel'
 import { useToast } from '../ToastContext'
+import { DEFAULT_ADJUST_PARAMS, renderAdjusted } from '../../lib/imageAdjust'
+import type { AdjustParams } from '../../lib/imageAdjust'
 import type { OcrResult, ProcessResponse } from '../../types'
 
 async function toPngBlob(dataUrl: string): Promise<Blob> {
@@ -171,6 +173,27 @@ export function ResultStep({
 }) {
   const { showToast } = useToast()
 
+  const [params, setParams] = useState<AdjustParams>(DEFAULT_ADJUST_PARAMS)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const imgRef = useRef<HTMLImageElement | null>(null)
+  const [imgLoaded, setImgLoaded] = useState(false)
+
+  useEffect(() => {
+    setImgLoaded(false)
+    const img = new Image()
+    img.onload = () => {
+      imgRef.current = img
+      setImgLoaded(true)
+    }
+    img.src = result.result
+    setParams(DEFAULT_ADJUST_PARAMS)
+  }, [result.result])
+
+  useEffect(() => {
+    if (!imgLoaded || !canvasRef.current || !imgRef.current) return
+    renderAdjusted(canvasRef.current, imgRef.current, params)
+  }, [params, imgLoaded])
+
   const handleCopy = async () => {
     try {
       const blob = await toPngBlob(result.result)
@@ -185,7 +208,7 @@ export function ResultStep({
     <div className="flex flex-col items-center gap-6">
       <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 shadow-[var(--shadow-card)]">
         <div className="flex max-h-[56vh] items-center justify-center overflow-hidden rounded-lg bg-[var(--color-surface-3)] ring-1 ring-inset ring-black/5">
-          <img src={result.result} alt="scanned document" className="max-h-[56vh] max-w-full" />
+          <canvas ref={canvasRef} aria-label="scanned document" className="max-h-[56vh] max-w-full" />
         </div>
       </div>
 
@@ -211,7 +234,7 @@ export function ResultStep({
 
       <ExtractedText id={result.id} />
 
-      <AdjustmentPanel imageSrc={result.result} />
+      <AdjustmentPanel params={params} onParamsChange={setParams} canvasRef={canvasRef} />
     </div>
   )
 }
