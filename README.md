@@ -143,13 +143,10 @@ Nothing leaves localhost.
 
 ## Ultra HD upscale
 
-`backend/app/superres.py` runs realesr-general-x4v3, the compact variant, for inference. Off by
-default. It's trained on natural
-photos, not scanned text, and tends to add ringing artifacts to document
-scans rather than sharpening them.
-
-Input is capped at 1000px on the long edge before upscaling - this model's
-cost scales with input size, not output, so it bounds worst-case latency.
+`scanner.upscale_to_hd` (in `backend/app/scanner.py`) upscales the result to
+up to 3840px on the long edge using a Lanczos resize followed by an
+edge-preserving denoise and a small-radius unsharp mask tuned to character
+stroke width. Off by default.
 
 ## OCR & searchable PDF
 

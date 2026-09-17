@@ -1,8 +1,6 @@
 import cv2
 import numpy as np
 
-from . import superres
-
 
 
 def _resize_for_detection(image, max_dim=1500):
@@ -186,9 +184,6 @@ def enhance(image, mode="color"):
 
 
 def upscale_to_hd(image):
-    if superres.is_available():
-        return superres.upscale(image)
-
     h, w = image.shape[:2]
     scale = 3840/max(h, w)
     if scale <= 1.0:
@@ -198,5 +193,6 @@ def upscale_to_hd(image):
         (int(round(w * scale)), int(round(h * scale))),
         interpolation=cv2.INTER_LANCZOS4,
     )
-    detail_blur = cv2.GaussianBlur(upscaled, (0, 0), 1.2)
-    return cv2.addWeighted(upscaled, 1.15, detail_blur, -0.15, 0)
+    denoised = cv2.bilateralFilter(upscaled, d=5, sigmaColor=35, sigmaSpace=35)
+    stroke_blur = cv2.GaussianBlur(denoised, (0, 0), 1.0)
+    return cv2.addWeighted(denoised, 1.6, stroke_blur, -0.6, 0)
