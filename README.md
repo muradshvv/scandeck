@@ -1,93 +1,137 @@
-# Shirinov Murad
+# Document Scanner
 
+Upload a photo of a document and get a cropped, deskewed, enhanced scan back
+(color, grayscale, or black & white). Corners are auto-detected; there's a
+quick confirm/edit step before processing.
 
+## Running locally
 
-## Getting started
+First time:
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://gitlab.mff.cuni.cz/teaching/nprg045/bouali/shirinov-murad.git
-git branch -M master
-git push -uf origin master
+```powershell
+cd backend
+python -m venv venv
+venv\Scripts\pip install -r requirements.txt
+cd ..\frontend
+npm install
 ```
 
-## Integrate with your tools
+Optional extras:
 
-* [Set up project integrations](https://gitlab.mff.cuni.cz/teaching/nprg045/bouali/shirinov-murad/-/settings/integrations)
+```powershell
+cd backend
+venv\Scripts\pip install -r requirements-ml.txt
+venv\Scripts\pip install -r requirements-ocr.txt 
+```
 
-## Collaborate with your team
+Then, from the project root:
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+```cmd
+start.bat
+```
 
-## Test and Deploy
+Starts the backend on 127.0.0.1:8001 and the frontend on localhost:5173.
 
-Use the built-in continuous integration in GitLab.
+## How it works
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+1. `POST /api/upload` - decodes the image, runs the corner-detection chain.
+2. User confirms or adjusts the corners in the frontend.
+3. `POST /api/process` - warps to a flat rectangle, applies the selected
+   style, optionally upscales. Returns the result and a download link.
+4. `GET /api/download/{id}` - serves the file (image, standard PDF, or
+   searchable PDF).
 
-***
+Uploads and processed files live under `backend/storage/` and expire after an
+hour. Completed scans also get a permanent history entry until deleted.
+Nothing leaves localhost.
 
-# Editing this README
+## Ultra HD upscale
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+`backend/app/superres.py` runs realesr-general-x4v3, the compact variant, for inference. Off by
+default. It's trained on natural
+photos, not scanned text, and tends to add ringing artifacts to document
+scans rather than sharpening them.
 
-## Suggestions for a good README
+Input is capped at 1000px on the long edge before upscaling - this model's
+cost scales with input size, not output, so it bounds worst-case latency.
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+## OCR & searchable PDF
 
-## Name
-Choose a self-explaining name for your project.
+`backend/app/ocr.py` runs EasyOCR on demand via `GET /api/ocr/{id}`, 
+returning extracted text and per-word confidence.
+`backend/app/pdf_export.py` builds the searchable PDF variant - the scan
+image with an invisible text layer positioned from the OCR word boxes.
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+Both are optional (`requirements-ocr.txt`); without it, those endpoints
+return a 503. OCR quality depends heavily on the source photo's resolution -
+upscaling a low-res crop first doesn't help, since there's no detail to
+recover.
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+## ML / model weights
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+`ml/models/` holds every model file the backend loads at runtime. `document_detector_*.pt`
+was trained on SmartDoc 2015 via a Kaggle GPU notebook.
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+## Repo layout
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+```
+CVPROJ/
+├── README.md                 You are here ._.
+├── start.bat                 Launches backend + frontend together for local dev.
+│
+├── backend/                  FastAPI server.
+│   ├── requirements.txt          Core deps (FastAPI, OpenCV, etc.) - always needed.
+│   ├── requirements-ml.txt       Optional: torch, for the Ultra HD upscaler and fallback detector.
+│   ├── requirements-ocr.txt       Optional: EasyOCR, for text extraction and searchable PDFs.
+│   └── app/
+│       ├── main.py                API routes: /api/upload, /api/process, /api/download, /api/ocr, history.
+│       ├── model_paths.py         Resolves ml/models/ regardless of where the app is run from.
+│       ├── detector.py            Primary corner detector
+│       ├── scanner.py             Classical CV corner fallback, perspective warp, color/gray/b&w enhance.
+│       ├── corner_model.py        Less accurate trained corner detector (document_detector_2.pt).
+│       ├── superres.py            Ultra HD upscaler.
+│       ├── ocr.py                 EasyOCR text extraction.
+│       ├── pdf_export.py          Builds searchable PDFs from OCR word boxes.
+│       └── history.py             Reads/writes the scan history index.
+│
+├── frontend/               
+│   └── src/
+│       ├── App.tsx                Top-level layout: sidebar, topbar, and page routing.
+│       ├── main.tsx               React entry point.
+│       ├── types.ts               Shared TypeScript types for API payloads.
+│       ├── api/client.ts           Fetch wrappers for all backend endpoints.
+│       ├── hooks/
+│       │   ├── useScanFlow.ts         Drives the upload → adjust → result flow and its state.
+│       │   └── useSettings.ts         Persists theme/default mode/toggles to localStorage.
+│       ├── lib/
+│       │   ├── imageAdjust.ts         Client-side brightness/contrast/etc. canvas adjustments.
+│       │   └── rotate.ts              Rotation math kept in sync with scanner.py's cv2.rotate geometry.
+│       └── components/
+│           ├── BrandMark.tsx          App logo.
+│           ├── Stepper.tsx            Upload/Confirm/Done progress indicator.
+│           ├── AdjustmentPanel.tsx    Manual brightness/contrast/etc. controls on the result step.
+│           ├── BeforeAfterSlider.tsx  Draggable before/after comparison slider.
+│           ├── HelpBubble.tsx         Keyboard-shortcut help popover.
+│           ├── LoadingOverlay.tsx     Full-screen spinner shown during upload/processing.
+│           ├── Toast.tsx / ToastContext.ts   Toast notification system.
+│           ├── layout/
+│           │   ├── Sidebar.tsx            Page navigation (Scan/History/Settings).
+│           │   └── Topbar.tsx             Top bar with theme toggle.
+│           ├── pages/
+│           │   ├── ScanPage.tsx           Hosts the upload/adjust/result step flow.
+│           │   ├── HistoryPage.tsx        Lists and re-downloads past scans.
+│           │   └── SettingsPage.tsx       Theme, default style, upscale toggle, clear history.
+│           └── steps/
+│               ├── UploadStep.tsx         File picker / drag-drop.
+│               ├── AdjustStep.tsx         Corner adjustment before processing.
+│               └── ResultStep.tsx         Final scan preview, download, before/after compare.
+│
+└── ml/
+    └── models/               
+        ├── document_detector_1.pt    Primary corner detector.
+        ├── document_detector_2.pt    Secondary corner detector.
+        ├── ultra_hd_upscaler.pt      upscaler.
+        ├── text_detector.pt          text detector.
+        └── text_reader.pt            text recognizer.
+```
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.

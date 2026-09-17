@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --color-base: #f5f6f8;
+  --color-surface: #ffffff;
+  --color-surface-2: #fafbfc;
+  --color-surface-3: #eef1f4;
+  --color-border: #e3e6eb;
+  --color-border-strong: #cfd4dc;
+
+  --color-text: #171a21;
+  --color-text-secondary: #565e6b;
+  --color-text-muted: #8991a0;
+
+  --color-accent: #2f5d78;
+  --color-accent-hover: #244a61;
+  --color-accent-soft: #2f5d781a;
+
+  --color-success: #4f8b6f;
+  --color-success-soft: #4f8b6f1a;
+  --color-warning: #b07d2c;
+  --color-danger: #c0463f;
+  --color-danger-soft: #c0463f1a;
+
+  --shadow-card: 0 1px 2px rgba(23, 26, 33, 0.03), 0 6px 20px rgba(23, 26, 33, 0.05);
+  --shadow-float: 0 10px 28px rgba(23, 26, 33, 0.1), 0 3px 8px rgba(23, 26, 33, 0.06);
+}
+
+:root[data-theme="dark"] {
+  --color-base: #0c0e12;
+  --color-surface: #14171d;
+  --color-surface-2: #181c23;
+  --color-surface-3: #1e232b;
+  --color-border: #262b34;
+  --color-border-strong: #333944;
+
+  --color-text: #eef0f3;
+  --color-text-secondary: #9aa1ac;
+  --color-text-muted: #656d7a;
+
+  --color-accent: #5b8ba8;
+  --color-accent-hover: #4a768f;
+  --color-accent-soft: #5b8ba81a;
+
+  --color-success: #6fac8b;
+  --color-success-soft: #6fac8b1a;
+  --color-warning: #d0a256;
+  --color-danger: #d9736c;
+  --color-danger-soft: #d9736c1a;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.18), 0 6px 20px rgba(0, 0, 0, 0.28);
+  --shadow-float: 0 10px 28px rgba(0, 0, 0, 0.38), 0 3px 8px rgba(0, 0, 0, 0.24);
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-base);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+h1, h2, h3 {
+  letter-spacing: -0.02em;
+}
+
+::selection {
+  background: var(--color-accent-soft);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}

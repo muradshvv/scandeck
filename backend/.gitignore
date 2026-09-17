@@ -1,0 +1,5 @@
+venv/
+storage/uploads/*
+storage/outputs/*
+server.log
+__pycache__/
