@@ -4,33 +4,129 @@ Upload a photo of a document and get a cropped, deskewed, enhanced scan back
 (color, grayscale, or black & white). Corners are auto-detected; there's a
 quick confirm/edit step before processing.
 
+## Architecture
+
+```mermaid
+flowchart TD
+    subgraph Client["Frontend (React + TypeScript + Vite)"]
+        Upload["UploadStep"] --> Adjust["AdjustStep\n(corner confirm/edit)"]
+        Adjust --> Result["ResultStep\n(preview, download)"]
+        History["HistoryPage"]
+        Settings["SettingsPage"]
+    end
+
+    subgraph Server["Backend (FastAPI, backend/app/main.py)"]
+        UploadEP["POST /api/upload"]
+        ProcessEP["POST /api/process"]
+        DownloadEP["GET /api/download/{id}"]
+        OcrEP["GET /api/ocr/{id}"]
+        HistoryEP["GET/DELETE /api/history"]
+    end
+
+    subgraph CornerChain["Corner detection cascade"]
+        D1["detector.py\nONNX heatmap model\n(document_detector_1.pt)"]
+        D2["scanner.py\nclassical CV (Canny + contours)"]
+        D3["corner_model.py\nMobileNetV2 regressor\n(document_detector_2.pt)"]
+        D4["scanner.py\nfull-image fallback"]
+        D1 -- "fails" --> D2 -- "fails" --> D3 -- "fails" --> D4
+    end
+
+    subgraph Processing["scanner.py"]
+        Warp["warp_document\n(perspective transform)"]
+        Enhance["enhance\n(color / gray / bw)"]
+        Upscale["superres.py\nUltra HD upscaler\n(optional)"]
+    end
+
+    subgraph OCRChain["ocr.py / pdf_export.py"]
+        EasyOCR["EasyOCR\n(text_detector.pt, text_reader.pt)"]
+        SearchablePDF["build_searchable_pdf"]
+    end
+
+    Storage[("backend/storage/\nuploads / outputs / history")]
+
+    Upload -- "image file" --> UploadEP
+    UploadEP --> CornerChain
+    CornerChain -- "4 corners" --> Adjust
+    Adjust -- "confirmed corners" --> ProcessEP
+    ProcessEP --> Warp --> Enhance --> Upscale
+    Upscale --> Storage
+    Storage --> Result
+    Result --> DownloadEP
+    Result --> OcrEP --> EasyOCR --> SearchablePDF
+    History --> HistoryEP --> Storage
+```
+
+## Requirements
+
+- **Python 3.11+** (backend)
+- **Node.js 20+** and npm (frontend)
+- Windows (`start.bat` uses `cmd`); on macOS/Linux run the two `Then, from the
+  project root` commands below manually instead.
+
 ## Running locally
 
-First time:
+### 1. Backend setup
 
 ```powershell
 cd backend
 python -m venv venv
 venv\Scripts\pip install -r requirements.txt
+```
+
+Optional extras (install if you want the Ultra HD upscaler / MobileNetV2
+fallback detector, and/or OCR + searchable PDF export):
+
+```powershell
+venv\Scripts\pip install -r requirements-ml.txt
+venv\Scripts\pip install -r requirements-ocr.txt
+```
+
+### 2. Frontend setup
+
+```powershell
 cd ..\frontend
 npm install
 ```
 
-Optional extras:
+### 3. Run both together
 
-```powershell
-cd backend
-venv\Scripts\pip install -r requirements-ml.txt
-venv\Scripts\pip install -r requirements-ocr.txt 
-```
-
-Then, from the project root:
+From the project root:
 
 ```cmd
 start.bat
 ```
 
-Starts the backend on 127.0.0.1:8001 and the frontend on localhost:5173.
+This opens two terminal windows: the backend on `127.0.0.1:8001`
+(`uvicorn app.main:app`) and the frontend dev server on `localhost:5173`. The
+backend also auto-opens `http://127.0.0.1:8001` in your browser on startup
+(set `SCANNER_NO_BROWSER=1` to disable).
+
+Or run them individually, each from its own directory:
+
+```powershell
+# backend
+cd backend
+venv\Scripts\activate
+uvicorn app.main:app --host 127.0.0.1 --port 8001
+
+# frontend (separate terminal)
+cd frontend
+npm run dev
+```
+
+Then open `http://localhost:5173` in a browser.
+
+### 4. Production build (frontend)
+
+```powershell
+cd frontend
+npm run build
+```
+
+Outputs static assets to `frontend/dist/`. The FastAPI backend is API-only
+(see `GET /` below) and is not set up to serve this build directly — it must
+be served separately (e.g. `npm run preview`, or any static file host) with
+`VITE`-configured requests pointed at the backend's URL.
 
 ## How it works
 
@@ -134,4 +230,3 @@ CVPROJ/
         ├── text_detector.pt          text detector.
         └── text_reader.pt            text recognizer.
 ```
-
