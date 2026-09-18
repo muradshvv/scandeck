@@ -4,6 +4,10 @@ Upload a photo of a document and get a cropped, deskewed, enhanced scan back
 (color, grayscale, or black & white). Corners are auto-detected; there's a
 quick confirm/edit step before processing.
 
+**Live demo:** https://muradshvv.github.io/scandeck/ (frontend on GitHub
+Pages, backend on Render's free tier - the first request after inactivity can
+take ~30s while it wakes up).
+
 ## Architecture
 
 ```mermaid
@@ -140,9 +144,9 @@ was trained on SmartDoc 2015 via a Kaggle GPU notebook.
 CVPROJ/
 ├── README.md                 You are here ._.
 ├── start.bat                 Launches backend + frontend together for local dev.
-├── render.yaml                Backend deploy blueprint (see "Deploying" above).
+├── render.yaml                Backend deploy
 ├── .github/workflows/
-│   └── deploy-pages.yml           Builds and deploys frontend/ to GitHub Pages on push.
+│   └── deploy-pages.yml           Builds and deploys frontend/ to GitHub.
 │
 ├── backend/                  FastAPI server.
 │   ├── requirements.txt          Core deps (FastAPI, OpenCV, etc.) - always needed.
@@ -154,7 +158,7 @@ CVPROJ/
 │       ├── detector.py            Primary corner detector
 │       ├── scanner.py             Classical CV corner fallback, perspective warp, color/gray/b&w enhance.
 │       ├── corner_model.py        Less accurate trained corner detector (document_detector_2.pt).
-│       ├── superres.py            
+│       ├── superres.py            Ultra HD upscaler.
 │       ├── ocr.py                 EasyOCR text extraction.
 │       ├── pdf_export.py          Builds searchable PDFs from OCR word boxes.
 │       └── history.py             Reads/writes the scan history index.
