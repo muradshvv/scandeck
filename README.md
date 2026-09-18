@@ -116,10 +116,12 @@ Nothing leaves localhost.
 
 ## Ultra HD upscale
 
-`scanner.upscale_to_hd` (in `backend/app/scanner.py`) upscales the result to
-up to 3840px on the long edge using a Lanczos resize followed by an
-edge-preserving denoise and a small-radius unsharp mask tuned to character
-stroke width. Off by default.
+`scanner.upscale_to_hd` uses a deep learning model when `requirements-ml.txt`
+is installed: `backend/app/superres.py` runs an RRDBNet
+([Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN)) super-resolution
+network, loaded from `ml/models/ultra_hd_upscaler.pt`
+
+Off by default.
 
 ## OCR & searchable PDF
 
@@ -158,7 +160,7 @@ CVPROJ/
 │       ├── detector.py            Primary corner detector
 │       ├── scanner.py             Classical CV corner fallback, perspective warp, color/gray/b&w enhance.
 │       ├── corner_model.py        Less accurate trained corner detector (document_detector_2.pt).
-│       ├── superres.py            Ultra HD upscaler.
+│       ├── superres.py            Ultra HD upscaler (RRDBNet/Real-ESRGAN, optional).
 │       ├── ocr.py                 EasyOCR text extraction.
 │       ├── pdf_export.py          Builds searchable PDFs from OCR word boxes.
 │       └── history.py             Reads/writes the scan history index.
