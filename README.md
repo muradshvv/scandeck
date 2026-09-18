@@ -140,6 +140,9 @@ was trained on SmartDoc 2015 via a Kaggle GPU notebook.
 CVPROJ/
 ├── README.md                 You are here ._.
 ├── start.bat                 Launches backend + frontend together for local dev.
+├── render.yaml                Backend deploy blueprint (see "Deploying" above).
+├── .github/workflows/
+│   └── deploy-pages.yml           Builds and deploys frontend/ to GitHub Pages on push.
 │
 ├── backend/                  FastAPI server.
 │   ├── requirements.txt          Core deps (FastAPI, OpenCV, etc.) - always needed.
@@ -151,12 +154,13 @@ CVPROJ/
 │       ├── detector.py            Primary corner detector
 │       ├── scanner.py             Classical CV corner fallback, perspective warp, color/gray/b&w enhance.
 │       ├── corner_model.py        Less accurate trained corner detector (document_detector_2.pt).
-│       ├── superres.py            Ultra HD upscaler.
+│       ├── superres.py            
 │       ├── ocr.py                 EasyOCR text extraction.
 │       ├── pdf_export.py          Builds searchable PDFs from OCR word boxes.
 │       └── history.py             Reads/writes the scan history index.
 │
 ├── frontend/               
+│   ├── vercel.json             Vercel build config (see "Deploying" above).
 │   └── src/
 │       ├── App.tsx                Top-level layout: sidebar, topbar, and page routing.
 │       ├── main.tsx               React entry point.

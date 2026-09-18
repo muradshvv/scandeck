@@ -30,10 +30,11 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Build (static UI preview - no backend on Pages)
+      - name: Build (static UI preview)
         working-directory: frontend
         env:
           GITHUB_PAGES_BASE: /${{ github.event.repository.name }}/
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
         run: npm run build
 
       - uses: actions/upload-pages-artifact@v3

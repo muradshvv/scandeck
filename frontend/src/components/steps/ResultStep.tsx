@@ -1,6 +1,6 @@
 import { ChevronDown, Clipboard, Download, FileText, Loader2, RefreshCcw, ScanText } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { fetchOcrText } from '../../api/client'
+import { apiUrl, fetchOcrText } from '../../api/client'
 import { AdjustmentPanel } from '../AdjustmentPanel'
 import { useToast } from '../ToastContext'
 import { DEFAULT_ADJUST_PARAMS, renderAdjusted } from '../../lib/imageAdjust'
@@ -214,14 +214,14 @@ export function ResultStep({
 
       <div className="inline-flex items-center divide-x divide-[var(--color-border)] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
         <a
-          href={result.download_url}
+          href={apiUrl(result.download_url)}
           download="scanned_document"
           className="flex h-11 items-center gap-2 bg-[var(--color-accent)] px-5 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-accent-hover)]"
         >
           <Download className="h-4 w-4" />
           Download
         </a>
-        <ExportMenu downloadUrl={result.download_url} />
+        <ExportMenu downloadUrl={apiUrl(result.download_url)} />
         <button onClick={handleCopy} className={toolbarButtonClass}>
           <Clipboard className="h-4 w-4" />
           Copy

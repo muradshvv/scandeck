@@ -1,5 +1,6 @@
 import { X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
+import { apiUrl } from '../../api/client'
 import { Stepper } from '../Stepper'
 import { LoadingOverlay } from '../LoadingOverlay'
 import { UploadStep } from '../steps/UploadStep'
@@ -27,7 +28,7 @@ export function ScanPage({
     if (!settings.autoDownload || !flow.result || downloadedResultRef.current === flow.result.download_url) return
     downloadedResultRef.current = flow.result.download_url
     const link = document.createElement('a')
-    link.href = flow.result.download_url
+    link.href = apiUrl(flow.result.download_url)
     link.download = 'scanned_document'
     link.click()
     showToast('Downloaded automatically')

@@ -32,9 +32,11 @@ SESSION_TTL_SECONDS = 60 * 60  # 1 hour
 
 app = FastAPI(title="Document Scanner")
 
+_extra_origins = [o.strip() for o in os.environ.get("SCANNER_ALLOWED_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8001", "http://127.0.0.1:8001"],
+    allow_origins=["http://localhost:8001", "http://127.0.0.1:8001", *_extra_origins],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_methods=["*"],
     allow_headers=["*"],
 )

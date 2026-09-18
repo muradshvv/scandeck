@@ -1,6 +1,6 @@
 import { Columns2, Download, FileText, LayoutGrid, List, History as HistoryIcon, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { deleteHistoryEntry, fetchHistory } from '../../api/client'
+import { apiUrl, deleteHistoryEntry, fetchHistory } from '../../api/client'
 import { BeforeAfterSlider } from '../BeforeAfterSlider'
 import { useToast } from '../ToastContext'
 import type { HistoryEntry } from '../../types'
@@ -73,7 +73,7 @@ function EntryActions({
         <Columns2 className="h-3.5 w-3.5" />
       </button>
       <a
-        href={`/api/download/${entry.id}?ext=${entry.filename.split('.').pop()}`}
+        href={apiUrl(`/api/download/${entry.id}?ext=${entry.filename.split('.').pop()}`)}
         download="scanned_document"
         title="Download image"
         className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
@@ -81,7 +81,7 @@ function EntryActions({
         <Download className="h-3.5 w-3.5" />
       </a>
       <a
-        href={`/api/download/${entry.id}?ext=pdf`}
+        href={apiUrl(`/api/download/${entry.id}?ext=pdf`)}
         download="scanned_document.pdf"
         title="Download as PDF"
         className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
