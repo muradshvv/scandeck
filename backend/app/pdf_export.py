@@ -1,11 +1,12 @@
 import io
 
 from PIL import Image
-from reportlab.pdfgen import canvas
 
 
 
 def build_searchable_pdf(image_path, ocr_result):
+    from reportlab.pdfgen import canvas
+
     img = Image.open(image_path).convert("RGB")
     w, h = img.size
 
