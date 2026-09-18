@@ -7,54 +7,23 @@ quick confirm/edit step before processing.
 ## Architecture
 
 ```mermaid
-flowchart TD
-    subgraph Client["Frontend (React + TypeScript + Vite)"]
-        Upload["UploadStep"] --> Adjust["AdjustStep\n(corner confirm/edit)"]
-        Adjust --> Result["ResultStep\n(preview, download)"]
-        History["HistoryPage"]
-        Settings["SettingsPage"]
-    end
+%%{init: {'themeVariables': {'fontSize': '22px'}}}%%
+flowchart LR
+    Client["Frontend\n(React + Vite)"]
+    Server["Backend\n(FastAPI)"]
+    Corners["Corner detection\n(ML, with classical\nCV fallback)"]
+    Process["Warp, enhance,\noptional HD upscale"]
+    OCR["OCR + searchable PDF\n(optional)"]
+    Storage[("Storage")]
 
-    subgraph Server["Backend (FastAPI, backend/app/main.py)"]
-        UploadEP["POST /api/upload"]
-        ProcessEP["POST /api/process"]
-        DownloadEP["GET /api/download/{id}"]
-        OcrEP["GET /api/ocr/{id}"]
-        HistoryEP["GET/DELETE /api/history"]
-    end
-
-    subgraph CornerChain["Corner detection cascade"]
-        D1["detector.py\nONNX heatmap model\n(document_detector_1.pt)"]
-        D2["scanner.py\nclassical CV (Canny + contours)"]
-        D3["corner_model.py\nMobileNetV2 regressor\n(document_detector_2.pt)"]
-        D4["scanner.py\nfull-image fallback"]
-        D1 -- "fails" --> D2 -- "fails" --> D3 -- "fails" --> D4
-    end
-
-    subgraph Processing["scanner.py"]
-        Warp["warp_document\n(perspective transform)"]
-        Enhance["enhance\n(color / gray / bw)"]
-        Upscale["superres.py\nUltra HD upscaler\n(optional)"]
-    end
-
-    subgraph OCRChain["ocr.py / pdf_export.py"]
-        EasyOCR["EasyOCR\n(text_detector.pt, text_reader.pt)"]
-        SearchablePDF["build_searchable_pdf"]
-    end
-
-    Storage[("backend/storage/\nuploads / outputs / history")]
-
-    Upload -- "image file" --> UploadEP
-    UploadEP --> CornerChain
-    CornerChain -- "4 corners" --> Adjust
-    Adjust -- "confirmed corners" --> ProcessEP
-    ProcessEP --> Warp --> Enhance --> Upscale
-    Upscale --> Storage
-    Storage --> Result
-    Result --> DownloadEP
-    Result --> OcrEP --> EasyOCR --> SearchablePDF
-    History --> HistoryEP --> Storage
+    Client -- "upload photo" --> Server
+    Server --> Corners -- "4 corners" --> Client
+    Client -- "confirm/edit" --> Process
+    Process --> Storage --> Client
+    Client -- "on demand" --> OCR
 ```
+
+Full detail (every module and endpoint) is in the code and the sections below; this is the high-level shape.
 
 ## Requirements
 
