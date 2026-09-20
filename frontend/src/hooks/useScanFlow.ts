@@ -95,12 +95,15 @@ export function useScanFlow() {
     setUpscaleStatus('running')
     // this can take several minutes on a free-tier server since the model
     // runs on small tiles to stay within its memory limits
-    for (let attempt = 0; attempt < 200; attempt++) {
+    const MAX_CONSECUTIVE_FAILURES = 8
+    let consecutiveFailures = 0
+    for (let attempt = 0; attempt < 400; attempt++) {
       await sleep(UPSCALE_POLL_INTERVAL_MS)
       if (activePollId.current !== id) return
       try {
         const status = await fetchProcessStatus(id)
         if (activePollId.current !== id) return
+        consecutiveFailures = 0
         if (status.status === 'done' && status.result && status.download_url) {
           setResult((prev) => (prev && prev.id === id ? { ...prev, result: status.result!, download_url: status.download_url! } : prev))
           setUpscaleStatus('idle')
@@ -110,9 +113,13 @@ export function useScanFlow() {
           setUpscaleStatus('error')
           return
         }
-      } catch {
-        setUpscaleStatus('error')
-        return
+      } catch (err) {
+        console.error('Upscale status check failed, retrying', err)
+        consecutiveFailures++
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+          setUpscaleStatus('error')
+          return
+        }
       }
     }
     setUpscaleStatus('error')
