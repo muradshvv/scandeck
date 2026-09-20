@@ -16,7 +16,8 @@ flowchart LR
     Client["Frontend\n(React + Vite)"]
     Server["Backend\n(FastAPI)"]
     Corners["Corner detection\n(ML, with classical\nCV fallback)"]
-    Process["Warp, enhance,\noptional HD upscale"]
+    Process["Warp, enhance"]
+    AI["Ultra HD upscale\n(ONNX model,\nruns in-browser)"]
     OCR["OCR + searchable PDF\n(optional)"]
     Storage[("Storage")]
 
@@ -24,6 +25,7 @@ flowchart LR
     Server --> Corners -- "4 corners" --> Client
     Client -- "confirm/edit" --> Process
     Process --> Storage --> Client
+    Client -- "optional" --> AI
     Client -- "on demand" --> OCR
 ```
 
@@ -46,8 +48,8 @@ python -m venv venv
 venv\Scripts\pip install -r requirements.txt
 ```
 
-Optional extras (install if you want the Ultra HD upscaler / MobileNetV2
-fallback detector, and/or OCR + searchable PDF export):
+Optional extras (install if you want the MobileNetV2 fallback corner
+detector, and/or OCR + searchable PDF export):
 
 ```powershell
 venv\Scripts\pip install -r requirements-ml.txt
@@ -116,12 +118,18 @@ Nothing leaves localhost.
 
 ## Ultra HD upscale
 
-`scanner.upscale_to_hd` uses a deep learning model when `requirements-ml.txt`
-is installed: `backend/app/superres.py` runs an RRDBNet
-([Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN)) super-resolution
-network, loaded from `ml/models/ultra_hd_upscaler.pt`
+Runs entirely client-side, not on the server. `frontend/src/lib/upscale.ts`
+loads an RRDBNet ([Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN))
+super-resolution model as ONNX (`frontend/public/models/ultra_hd_upscaler.onnx`,
+exported from `ml/models/ultra_hd_upscaler.pt`) and runs it in the browser via
+`onnxruntime-web`/WASM. The image is processed in small fixed-size overlapping
+tiles - each tile stays a constant shape regardless of position, and results
+are stitched back together - so memory use depends on tile size, not the
+source image's resolution, and nothing is ever downscaled before enhancing.
+`backend/app/scanner.py`'s `upscale_to_hd` only does a fast classical
+(non-AI) sharpen as an instant baseline while the AI pass runs.
 
-Off by default.
+Off by default; toggled in Settings.
 
 ## OCR & searchable PDF
 
@@ -152,7 +160,7 @@ CVPROJ/
 │
 ├── backend/                  FastAPI server.
 │   ├── requirements.txt          Core deps (FastAPI, OpenCV, etc.) - always needed.
-│   ├── requirements-ml.txt       Optional: torch, for the Ultra HD upscaler and fallback detector.
+│   ├── requirements-ml.txt       Optional: torch, for the MobileNetV2 fallback corner detector.
 │   ├── requirements-ocr.txt       Optional: EasyOCR, for text extraction and searchable PDFs.
 │   └── app/
 │       ├── main.py                API routes: /api/upload, /api/process, /api/download, /api/ocr, history.
@@ -160,7 +168,6 @@ CVPROJ/
 │       ├── detector.py            Primary corner detector
 │       ├── scanner.py             Classical CV corner fallback, perspective warp, color/gray/b&w enhance.
 │       ├── corner_model.py        Less accurate trained corner detector (document_detector_2.pt).
-│       ├── superres.py            Ultra HD upscaler (RRDBNet/Real-ESRGAN, optional).
 │       ├── ocr.py                 EasyOCR text extraction.
 │       ├── pdf_export.py          Builds searchable PDFs from OCR word boxes.
 │       └── history.py             Reads/writes the scan history index.
@@ -177,7 +184,8 @@ CVPROJ/
 │       │   └── useSettings.ts         Persists theme/default mode/toggles to localStorage.
 │       ├── lib/
 │       │   ├── imageAdjust.ts         Client-side brightness/contrast/etc. canvas adjustments.
-│       │   └── rotate.ts              Rotation math kept in sync with scanner.py's cv2.rotate geometry.
+│       │   ├── rotate.ts              Rotation math kept in sync with scanner.py's cv2.rotate geometry.
+│       │   └── upscale.ts             Ultra HD upscale - runs the ONNX model in-browser, tile by tile.
 │       └── components/
 │           ├── BrandMark.tsx          App logo.
 │           ├── Stepper.tsx            Upload/Confirm/Done progress indicator.
@@ -202,7 +210,7 @@ CVPROJ/
     └── models/               
         ├── document_detector_1.pt    Primary corner detector.
         ├── document_detector_2.pt    Secondary corner detector.
-        ├── ultra_hd_upscaler.pt      upscaler.
+        ├── ultra_hd_upscaler.pt      Ultra HD upscale source weights (exported to frontend/public/models/*.onnx).
         ├── text_detector.pt          text detector.
         └── text_reader.pt            text recognizer.
 ```

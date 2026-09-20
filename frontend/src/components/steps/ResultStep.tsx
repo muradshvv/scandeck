@@ -1,9 +1,10 @@
 import { ChevronDown, Clipboard, Download, FileText, Loader2, Maximize2, RefreshCcw, ScanText } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiUrl, fetchOcrText } from '../../api/client'
 import { AdjustmentPanel } from '../AdjustmentPanel'
 import { useToast } from '../ToastContext'
 import { DEFAULT_ADJUST_PARAMS, renderAdjusted } from '../../lib/imageAdjust'
+import { canvasToImage, upscaleTiled } from '../../lib/upscale'
 import type { AdjustParams } from '../../lib/imageAdjust'
 import type { OcrResult, ProcessResponse } from '../../types'
 
@@ -167,13 +168,11 @@ function ExtractedText({ id }: { id: string }) {
 export function ResultStep({
   result,
   onScanAnother,
-  upscaleStatus,
-  upscaleProgress,
+  autoAiUpscale,
 }: {
   result: ProcessResponse
   onScanAnother: () => void
-  upscaleStatus: 'idle' | 'running' | 'error'
-  upscaleProgress: { done: number; total: number } | null
+  autoAiUpscale: boolean
 }) {
   const { showToast } = useToast()
 
@@ -181,10 +180,15 @@ export function ResultStep({
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imgRef = useRef<HTMLImageElement | null>(null)
   const [imgLoaded, setImgLoaded] = useState(false)
-  const prevUpscaleStatus = useRef(upscaleStatus)
+  const [upscaleStatus, setUpscaleStatus] = useState<'idle' | 'running' | 'error'>('idle')
+  const [upscaleProgress, setUpscaleProgress] = useState<{ done: number; total: number } | null>(null)
+  const upscaleAttempted = useRef(false)
 
   useEffect(() => {
     setImgLoaded(false)
+    upscaleAttempted.current = false
+    setUpscaleStatus('idle')
+    setUpscaleProgress(null)
     const img = new Image()
     img.onload = () => {
       imgRef.current = img
@@ -199,14 +203,31 @@ export function ResultStep({
     renderAdjusted(canvasRef.current, imgRef.current, params)
   }, [params, imgLoaded])
 
-  useEffect(() => {
-    if (prevUpscaleStatus.current === 'running' && upscaleStatus === 'idle') {
+  const handleAiUpscale = useCallback(async () => {
+    if (!imgRef.current || !canvasRef.current) return
+    setUpscaleStatus('running')
+    setUpscaleProgress(null)
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    try {
+      const canvas = await upscaleTiled(imgRef.current, (done, total) => setUpscaleProgress({ done, total }))
+      imgRef.current = await canvasToImage(canvas)
+      renderAdjusted(canvasRef.current, imgRef.current, params)
+      setUpscaleStatus('idle')
+      setUpscaleProgress(null)
       showToast('Ultra HD upscale applied - click the photo to see it at full size')
-    } else if (prevUpscaleStatus.current === 'running' && upscaleStatus === 'error') {
+    } catch (err) {
+      console.error(err)
+      setUpscaleStatus('error')
+      setUpscaleProgress(null)
       showToast('Ultra HD upscale failed - showing the standard scan instead', 'error')
     }
-    prevUpscaleStatus.current = upscaleStatus
-  }, [upscaleStatus, showToast])
+  }, [params, showToast])
+
+  useEffect(() => {
+    if (!imgLoaded || !autoAiUpscale || upscaleAttempted.current) return
+    upscaleAttempted.current = true
+    handleAiUpscale()
+  }, [imgLoaded, autoAiUpscale, handleAiUpscale])
 
   const handleCopy = async () => {
     try {
@@ -249,7 +270,7 @@ export function ResultStep({
           <div className="mt-3 flex flex-col items-center gap-2">
             <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Running Ultra HD upscale in the background - this can take a few minutes…
+              Running Ultra HD upscale in your browser - this can take a while, keep this tab open…
             </div>
             <div className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-[var(--color-surface-3)]">
               <div

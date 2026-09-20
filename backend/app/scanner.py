@@ -1,8 +1,6 @@
 import cv2
 import numpy as np
 
-from . import superres
-
 
 
 def _resize_for_detection(image, max_dim=1500):
@@ -185,10 +183,7 @@ def enhance(image, mode="color"):
     return sharpened
 
 
-def upscale_to_hd(image, progress_cb=None):
-    if superres.weights_available() and superres.is_available():
-        return superres.upscale_tiled(image, progress_cb=progress_cb)
-
+def upscale_to_hd(image):
     h, w = image.shape[:2]
     scale = 3840/max(h, w)
     if scale <= 1.0:

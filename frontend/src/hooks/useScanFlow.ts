@@ -1,13 +1,7 @@
-import { useCallback, useRef, useState } from 'react'
-import { fetchProcessStatus, processImage, uploadImage } from '../api/client'
+import { useCallback, useState } from 'react'
+import { processImage, uploadImage } from '../api/client'
 import { rotateCorners, rotatedDims, rotateImageDataUrl } from '../lib/rotate'
 import type { EnhanceMode, ProcessResponse, ScanStep } from '../types'
-
-const UPSCALE_POLL_INTERVAL_MS = 3000
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -32,12 +26,9 @@ export interface ScanSession {
 export function useScanFlow() {
   const [step, setStep] = useState<ScanStep>('upload')
   const [session, setSession] = useState<ScanSession | null>(null)
-  const activePollId = useRef<string | null>(null)
   const [result, setResult] = useState<ProcessResponse | null>(null)
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [upscaleStatus, setUpscaleStatus] = useState<'idle' | 'running' | 'error'>('idle')
-  const [upscaleProgress, setUpscaleProgress] = useState<{ done: number; total: number } | null>(null)
 
   const upload = useCallback(async (file: File): Promise<boolean> => {
     setError(null)
@@ -91,47 +82,6 @@ export function useScanFlow() {
     setSession((prev) => (prev ? { ...prev, corners: prev.detectedCorners } : prev))
   }, [])
 
-  const pollUpscale = useCallback(async (id: string) => {
-    activePollId.current = id
-    setUpscaleStatus('running')
-    setUpscaleProgress(null)
-    const MAX_CONSECUTIVE_FAILURES = 8
-    let consecutiveFailures = 0
-    for (let attempt = 0; attempt < 400; attempt++) {
-      await sleep(UPSCALE_POLL_INTERVAL_MS)
-      if (activePollId.current !== id) return
-      try {
-        const status = await fetchProcessStatus(id)
-        if (activePollId.current !== id) return
-        consecutiveFailures = 0
-        if (status.status === 'running' && status.progress) {
-          setUpscaleProgress(status.progress)
-        }
-        if (status.status === 'done' && status.result && status.download_url) {
-          setResult((prev) => (prev && prev.id === id ? { ...prev, result: status.result!, download_url: status.download_url! } : prev))
-          setUpscaleStatus('idle')
-          setUpscaleProgress(null)
-          return
-        }
-        if (status.status === 'error') {
-          setUpscaleStatus('error')
-          setUpscaleProgress(null)
-          return
-        }
-      } catch (err) {
-        console.error('Upscale status check failed, retrying', err)
-        consecutiveFailures++
-        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-          setUpscaleStatus('error')
-          setUpscaleProgress(null)
-          return
-        }
-      }
-    }
-    setUpscaleStatus('error')
-    setUpscaleProgress(null)
-  }, [])
-
   const confirm = useCallback(async (mode: EnhanceMode, upscale: boolean): Promise<boolean> => {
     if (!session) return false
     setError(null)
@@ -140,12 +90,6 @@ export function useScanFlow() {
       const processData = await processImage(session.id, session.corners, mode, upscale, session.rotationSteps)
       setResult(processData)
       setStep('result')
-      if (processData.upscale_pending) {
-        pollUpscale(processData.id)
-      } else {
-        activePollId.current = null
-        setUpscaleStatus('idle')
-      }
       return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Processing failed')
@@ -153,12 +97,9 @@ export function useScanFlow() {
     } finally {
       setLoading(null)
     }
-  }, [session, pollUpscale])
+  }, [session])
 
   const reset = useCallback(() => {
-    activePollId.current = null
-    setUpscaleStatus('idle')
-    setUpscaleProgress(null)
     setSession(null)
     setResult(null)
     setError(null)
@@ -171,8 +112,6 @@ export function useScanFlow() {
     result,
     loading,
     error,
-    upscaleStatus,
-    upscaleProgress,
     clearError: () => setError(null),
     upload,
     updateCorners,

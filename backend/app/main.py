@@ -1,12 +1,8 @@
 import base64
 import io
-import json
 import os
-import subprocess
-import sys
 import threading
 import time
-import traceback
 import uuid
 import webbrowser
 from pathlib import Path
@@ -57,9 +53,6 @@ def _open_browser():
 _sessions = {}
 _sessions_lock = threading.Lock()
 
-_jobs = {}
-_jobs_lock = threading.Lock()
-
 
 def _cleanup_expired():
     now = time.time()
@@ -100,72 +93,6 @@ def _thumbnail_b64(source, max_dim=480):
     thumb = cv2.resize(source, (int(sw * scale), int(sh * scale)), interpolation=cv2.INTER_AREA)
     return _encode_image_b64(thumb, ext=".jpg")
 
-
-def _run_upscale_job(session_id, out_path, history_filename):
-    worker_input = UPLOAD_DIR / f"{session_id}_upscale_in.png"
-    worker_output = UPLOAD_DIR / f"{session_id}_upscale_out.png"
-    progress_path = UPLOAD_DIR / f"{session_id}_upscale_progress.json"
-
-    try:
-        image = cv2.imread(str(out_path))
-        if image is None:
-            raise RuntimeError("Could not reload the processed image for upscaling")
-        _write_image(worker_input, image)
-
-        proc = subprocess.Popen(
-            [sys.executable, "-m", "app.upscale_worker", str(worker_input), str(worker_output), str(progress_path)],
-            cwd=str(BASE_DIR),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-
-        while proc.poll() is None:
-            time.sleep(1)
-            if progress_path.exists():
-                try:
-                    progress = json.loads(progress_path.read_text(encoding="utf-8"))
-                except (json.JSONDecodeError, OSError):
-                    progress = None
-                if progress:
-                    with _jobs_lock:
-                        if _jobs.get(session_id, {}).get("status") == "running":
-                            _jobs[session_id] = {"status": "running", "progress": progress}
-
-        _, stderr = proc.communicate()
-
-        if proc.returncode != 0 or not worker_output.exists():
-            raise RuntimeError(stderr.strip() or "Upscale worker process failed")
-
-        upscaled = cv2.imread(str(worker_output))
-        if upscaled is None:
-            raise RuntimeError("Could not read upscale worker output")
-
-        _write_image(out_path, upscaled)
-        _write_image(HISTORY_DIR / history_filename, upscaled)
-
-        entries = history.list_entries(HISTORY_DIR)
-        entry = next((e for e in entries if e["id"] == session_id), None)
-        if entry:
-            rh, rw = upscaled.shape[:2]
-            entry["upscaled"] = True
-            entry["width"] = rw
-            entry["height"] = rh
-            entry["thumbnail"] = _thumbnail_b64(upscaled)
-            history.add_entry(HISTORY_DIR, entry)
-
-        with _jobs_lock:
-            _jobs[session_id] = {"status": "done"}
-    except Exception as exc:
-        traceback.print_exc()
-        with _jobs_lock:
-            _jobs[session_id] = {"status": "error", "error": str(exc)}
-    finally:
-        for path in (worker_input, worker_output, progress_path):
-            try:
-                path.unlink(missing_ok=True)
-            except OSError:
-                pass
 
 
 
@@ -269,13 +196,8 @@ async def process_image(req: ProcessRequest):
 
     warped = scanner.warp_document(image, corners)
     result = scanner.enhance(warped, mode=req.mode)
-
-    upscale_pending = False
     if req.upscale:
-        if scanner.superres.weights_available():
-            upscale_pending = True
-        else:
-            result = scanner.upscale_to_hd(result)
+        result = scanner.upscale_to_hd(result)
 
     ext = ".png" if req.mode == "bw" else ".jpg"
     out_path = OUTPUT_DIR / f"{req.id}{ext}"
@@ -289,7 +211,7 @@ async def process_image(req: ProcessRequest):
         "id": req.id,
         "created_at": history.now_iso(),
         "mode": req.mode,
-        "upscaled": req.upscale and not upscale_pending,
+        "upscaled": req.upscale,
         "filename": history_filename,
         "width": rw,
         "height": rh,
@@ -297,44 +219,10 @@ async def process_image(req: ProcessRequest):
         "thumbnail": _thumbnail_b64(result),
     })
 
-    if upscale_pending:
-        with _jobs_lock:
-            _jobs[req.id] = {"status": "running"}
-        threading.Thread(
-            target=_run_upscale_job,
-            args=(req.id, out_path, history_filename),
-            daemon=True,
-        ).start()
-
     return {
         "id": req.id,
         "result": _encode_image_b64(result, ext=ext),
         "download_url": f"/api/download/{req.id}?ext={ext.lstrip('.')}",
-        "upscale_pending": upscale_pending,
-    }
-
-
-@app.get("/api/process/{session_id}/status")
-async def process_status(session_id: str):
-    with _jobs_lock:
-        job = dict(_jobs.get(session_id, {"status": "idle"}))
-
-    if job["status"] != "done":
-        return job
-
-    path = _find_source_image_path(session_id)
-    if path is None:
-        return {"status": "error", "error": "Result not found"}
-
-    ext = path.suffix
-    image = cv2.imread(str(path))
-    if image is None:
-        return {"status": "error", "error": "Result could not be read"}
-
-    return {
-        "status": "done",
-        "result": _encode_image_b64(image, ext=ext),
-        "download_url": f"/api/download/{session_id}?ext={ext.lstrip('.')}",
     }
 
 

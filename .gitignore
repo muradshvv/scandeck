@@ -19,6 +19,7 @@ ml/eval_samples/
 *.pth
 *.onnx
 !ml/models/*.pt
+!frontend/public/models/*.onnx
 
 .vscode/
 .idea/

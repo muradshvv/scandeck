@@ -92,7 +92,7 @@ export function SettingsPage({ store }: { store: SettingsStore }) {
 
       <Row
         title="Ultra HD upscale"
-        description="Adds ~10-15s per scan. Can add artifacts on dense text, off by default."
+        description="Runs an AI model in your browser after each scan (first run downloads ~18MB). Can take a while on larger scans - runs entirely on your device, not the server."
       >
         <Toggle checked={settings.upscaleEnabled} onChange={(v) => update('upscaleEnabled', v)} />
       </Row>
