@@ -3,6 +3,7 @@ import io
 import os
 import threading
 import time
+import traceback
 import uuid
 import webbrowser
 from pathlib import Path
@@ -122,6 +123,7 @@ def _run_upscale_job(session_id, out_path, history_filename):
         with _jobs_lock:
             _jobs[session_id] = {"status": "done"}
     except Exception as exc:
+        traceback.print_exc()
         with _jobs_lock:
             _jobs[session_id] = {"status": "error", "error": str(exc)}
 
