@@ -1,3 +1,8 @@
+import os
+
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+
 import cv2
 import numpy as np
 
@@ -11,7 +16,7 @@ MAX_INPUT_DIM = 1000
 TILE = 128
 TILE_PAD = 10
 TILE_SCALE = 4
-MAX_TILED_SOURCE_DIM = 2000
+MAX_TILED_SOURCE_DIM = 1400
 
 _model = None
 _load_attempted = False
@@ -90,6 +95,7 @@ def is_available():
     try:
         import torch
         torch.set_num_threads(1)
+        torch.backends.mkldnn.enabled = False
     except ImportError:
         return False
 
@@ -132,10 +138,14 @@ def upscale(image_bgr):
 def upscale_tiled(image_bgr, progress_cb=None):
     """Runs the model on small overlapping tiles so peak memory stays bounded
     regardless of the source image's size (RRDBNet's memory use grows with the
-    square of input size when run on a whole image at once)."""
+    square of input size when run on a whole image at once). The output is
+    written to a memory-mapped temp file, not an in-RAM array - a naive
+    in-memory buffer for the full 4x output (e.g. ~192MB for a 2000px source)
+    was itself enough to blow a 512MB host even with tiny per-tile inference."""
     if not is_available():
         raise RuntimeError("Super-resolution model is not available (torch missing or weights not found)")
 
+    import tempfile
     import torch
 
     h, w = image_bgr.shape[:2]
@@ -144,35 +154,54 @@ def upscale_tiled(image_bgr, progress_cb=None):
         image_bgr = cv2.resize(image_bgr, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)
         h, w = image_bgr.shape[:2]
 
-    rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-    out = np.zeros((h * TILE_SCALE, w * TILE_SCALE, 3), dtype=np.uint8)
-
     cols = -(-w // TILE)
     rows = -(-h // TILE)
     total = cols * rows
     done = 0
 
+    tmp = tempfile.NamedTemporaryFile(suffix=".dat", delete=False)
+    tmp.close()
+    out = np.memmap(tmp.name, dtype=np.uint8, mode="w+", shape=(h * TILE_SCALE, w * TILE_SCALE, 3))
+
+    padded_size = TILE + 2 * TILE_PAD
+
     for row in range(rows):
         for col in range(cols):
             tx, ty = col * TILE, row * TILE
             tw, th = min(TILE, w - tx), min(TILE, h - ty)
-            px, py = max(0, tx - TILE_PAD), max(0, ty - TILE_PAD)
-            pw = min(w, tx + tw + TILE_PAD) - px
-            ph = min(h, ty + th + TILE_PAD) - py
+            px, py = tx - TILE_PAD, ty - TILE_PAD
 
-            tile = rgb[py:py + ph, px:px + pw]
+            src_x0, src_y0 = max(0, px), max(0, py)
+            src_x1, src_y1 = min(w, px + padded_size), min(h, py + padded_size)
+            tile_bgr = image_bgr[src_y0:src_y1, src_x0:src_x1]
+
+            pad_left, pad_top = src_x0 - px, src_y0 - py
+            pad_right = padded_size - tile_bgr.shape[1] - pad_left
+            pad_bottom = padded_size - tile_bgr.shape[0] - pad_top
+            if pad_left or pad_top or pad_right or pad_bottom:
+                tile_bgr = cv2.copyMakeBorder(
+                    tile_bgr, pad_top, pad_bottom, pad_left, pad_right, cv2.BORDER_REFLECT
+                )
+
+            # every tile is fed to the model at the same fixed shape - a varying
+            # shape per tile (edge tiles used to be smaller) made PyTorch's CPU
+            # allocator keep a separate memory pool per shape it had seen,
+            # so peak memory kept climbing as more distinct edge shapes showed up
+            tile = cv2.cvtColor(tile_bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
             tensor = torch.from_numpy(tile.transpose(2, 0, 1)).unsqueeze(0)
             with torch.no_grad():
                 pred = _model(tensor)
             pred = pred.squeeze(0).clamp(0.0, 1.0).numpy().transpose(1, 2, 0)
 
-            cx, cy = (tx - px) * TILE_SCALE, (ty - py) * TILE_SCALE
+            cx, cy = TILE_PAD * TILE_SCALE, TILE_PAD * TILE_SCALE
             cw, ch = tw * TILE_SCALE, th * TILE_SCALE
-            crop = (pred[cy:cy + ch, cx:cx + cw] * 255.0).round().astype(np.uint8)
-            out[ty * TILE_SCALE:ty * TILE_SCALE + ch, tx * TILE_SCALE:tx * TILE_SCALE + cw] = crop
+            crop_rgb = (pred[cy:cy + ch, cx:cx + cw] * 255.0).round().astype(np.uint8)
+            crop_bgr = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2BGR)
+            out[ty * TILE_SCALE:ty * TILE_SCALE + ch, tx * TILE_SCALE:tx * TILE_SCALE + cw] = crop_bgr
 
             done += 1
             if progress_cb:
                 progress_cb(done, total)
 
-    return cv2.cvtColor(out, cv2.COLOR_RGB2BGR)
+    out.flush()
+    return out

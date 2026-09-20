@@ -1,4 +1,4 @@
-import { ChevronDown, Clipboard, Download, FileText, Loader2, RefreshCcw, ScanText } from 'lucide-react'
+import { ChevronDown, Clipboard, Download, FileText, Loader2, Maximize2, RefreshCcw, ScanText } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { apiUrl, fetchOcrText } from '../../api/client'
 import { AdjustmentPanel } from '../AdjustmentPanel'
@@ -199,7 +199,7 @@ export function ResultStep({
 
   useEffect(() => {
     if (prevUpscaleStatus.current === 'running' && upscaleStatus === 'idle') {
-      showToast('Ultra HD upscale applied')
+      showToast('Ultra HD upscale applied - click the photo to see it at full size')
     } else if (prevUpscaleStatus.current === 'running' && upscaleStatus === 'error') {
       showToast('Ultra HD upscale failed - showing the standard scan instead', 'error')
     }
@@ -216,12 +216,33 @@ export function ResultStep({
     }
   }
 
+  const handleViewFullSize = async () => {
+    try {
+      const res = await fetch(result.result)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank')
+    } catch {
+      showToast('Could not open full size view', 'error')
+    }
+  }
+
   return (
     <div className="flex flex-col items-center gap-6">
       <div className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 shadow-[var(--shadow-card)]">
-        <div className="flex max-h-[56vh] items-center justify-center overflow-hidden rounded-lg bg-[var(--color-surface-3)] ring-1 ring-inset ring-black/5">
+        <button
+          onClick={handleViewFullSize}
+          className="group relative flex max-h-[56vh] items-center justify-center overflow-hidden rounded-lg bg-[var(--color-surface-3)] ring-1 ring-inset ring-black/5"
+          title="View at full resolution"
+        >
           <canvas ref={canvasRef} aria-label="scanned document" className="max-h-[56vh] max-w-full" />
-        </div>
+          <div className="absolute inset-0 hidden items-center justify-center bg-black/40 group-hover:flex">
+            <span className="flex items-center gap-2 rounded-lg bg-black/60 px-4 py-2 text-sm font-medium text-white">
+              <Maximize2 className="h-4 w-4" />
+              View full size
+            </span>
+          </div>
+        </button>
         {upscaleStatus === 'running' && (
           <div className="mt-3 flex items-center justify-center gap-2 text-xs text-[var(--color-text-muted)]">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -230,11 +251,11 @@ export function ResultStep({
         )}
       </div>
 
-      <div className="inline-flex items-center divide-x divide-[var(--color-border)] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
+      <div className="inline-flex items-center divide-x divide-[var(--color-border)] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
         <a
           href={apiUrl(result.download_url)}
           download="scanned_document"
-          className="flex h-11 items-center gap-2 bg-[var(--color-accent)] px-5 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-accent-hover)]"
+          className="flex h-11 items-center gap-2 rounded-l-lg bg-[var(--color-accent)] px-5 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-accent-hover)]"
         >
           <Download className="h-4 w-4" />
           Download
@@ -244,7 +265,7 @@ export function ResultStep({
           <Clipboard className="h-4 w-4" />
           Copy
         </button>
-        <button onClick={onScanAnother} className={toolbarButtonClass}>
+        <button onClick={onScanAnother} className={`${toolbarButtonClass} rounded-r-lg`}>
           <RefreshCcw className="h-4 w-4" />
           Scan another
         </button>

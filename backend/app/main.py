@@ -100,6 +100,7 @@ def _thumbnail_b64(source, max_dim=480):
 
 
 def _run_upscale_job(session_id, out_path, history_filename):
+    upscaled = None
     try:
         image = cv2.imread(str(out_path))
         if image is None:
@@ -126,6 +127,13 @@ def _run_upscale_job(session_id, out_path, history_filename):
         traceback.print_exc()
         with _jobs_lock:
             _jobs[session_id] = {"status": "error", "error": str(exc)}
+    finally:
+        tmp_path = getattr(upscaled, "filename", None)
+        if tmp_path:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
 
 
