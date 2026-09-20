@@ -1,6 +1,9 @@
 import base64
 import io
+import json
 import os
+import subprocess
+import sys
 import threading
 import time
 import traceback
@@ -54,7 +57,6 @@ def _open_browser():
 _sessions = {}
 _sessions_lock = threading.Lock()
 
-# id -> {"status": "running" | "done" | "error", "error": str}
 _jobs = {}
 _jobs_lock = threading.Lock()
 
@@ -100,13 +102,44 @@ def _thumbnail_b64(source, max_dim=480):
 
 
 def _run_upscale_job(session_id, out_path, history_filename):
-    upscaled = None
+    worker_input = UPLOAD_DIR / f"{session_id}_upscale_in.png"
+    worker_output = UPLOAD_DIR / f"{session_id}_upscale_out.png"
+    progress_path = UPLOAD_DIR / f"{session_id}_upscale_progress.json"
+
     try:
         image = cv2.imread(str(out_path))
         if image is None:
             raise RuntimeError("Could not reload the processed image for upscaling")
+        _write_image(worker_input, image)
 
-        upscaled = scanner.upscale_to_hd(image)
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "app.upscale_worker", str(worker_input), str(worker_output), str(progress_path)],
+            cwd=str(BASE_DIR),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        while proc.poll() is None:
+            time.sleep(1)
+            if progress_path.exists():
+                try:
+                    progress = json.loads(progress_path.read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, OSError):
+                    progress = None
+                if progress:
+                    with _jobs_lock:
+                        if _jobs.get(session_id, {}).get("status") == "running":
+                            _jobs[session_id] = {"status": "running", "progress": progress}
+
+        _, stderr = proc.communicate()
+
+        if proc.returncode != 0 or not worker_output.exists():
+            raise RuntimeError(stderr.strip() or "Upscale worker process failed")
+
+        upscaled = cv2.imread(str(worker_output))
+        if upscaled is None:
+            raise RuntimeError("Could not read upscale worker output")
 
         _write_image(out_path, upscaled)
         _write_image(HISTORY_DIR / history_filename, upscaled)
@@ -128,10 +161,9 @@ def _run_upscale_job(session_id, out_path, history_filename):
         with _jobs_lock:
             _jobs[session_id] = {"status": "error", "error": str(exc)}
     finally:
-        tmp_path = getattr(upscaled, "filename", None)
-        if tmp_path:
+        for path in (worker_input, worker_output, progress_path):
             try:
-                os.remove(tmp_path)
+                path.unlink(missing_ok=True)
             except OSError:
                 pass
 
@@ -240,7 +272,7 @@ async def process_image(req: ProcessRequest):
 
     upscale_pending = False
     if req.upscale:
-        if scanner.superres.is_available():
+        if scanner.superres.weights_available():
             upscale_pending = True
         else:
             result = scanner.upscale_to_hd(result)

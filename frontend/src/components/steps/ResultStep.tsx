@@ -168,10 +168,12 @@ export function ResultStep({
   result,
   onScanAnother,
   upscaleStatus,
+  upscaleProgress,
 }: {
   result: ProcessResponse
   onScanAnother: () => void
   upscaleStatus: 'idle' | 'running' | 'error'
+  upscaleProgress: { done: number; total: number } | null
 }) {
   const { showToast } = useToast()
 
@@ -244,9 +246,26 @@ export function ResultStep({
           </div>
         </button>
         {upscaleStatus === 'running' && (
-          <div className="mt-3 flex items-center justify-center gap-2 text-xs text-[var(--color-text-muted)]">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Running Ultra HD upscale in the background - this can take a few minutes…
+          <div className="mt-3 flex flex-col items-center gap-2">
+            <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Running Ultra HD upscale in the background - this can take a few minutes…
+            </div>
+            <div className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-[var(--color-surface-3)]">
+              <div
+                className="h-full rounded-full bg-[var(--color-accent)] transition-all duration-500"
+                style={{
+                  width: upscaleProgress
+                    ? `${Math.min(100, Math.round((upscaleProgress.done / Math.max(1, upscaleProgress.total)) * 100))}%`
+                    : '8%',
+                }}
+              />
+            </div>
+            {upscaleProgress && (
+              <div className="text-[11px] text-[var(--color-text-muted)]">
+                {upscaleProgress.done} / {upscaleProgress.total} tiles
+              </div>
+            )}
           </div>
         )}
       </div>

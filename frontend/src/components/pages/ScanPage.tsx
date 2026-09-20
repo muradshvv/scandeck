@@ -76,7 +76,12 @@ export function ScanPage({
         />
       )}
       {flow.step === 'result' && flow.result && (
-        <ResultStep result={flow.result} onScanAnother={flow.reset} upscaleStatus={flow.upscaleStatus} />
+        <ResultStep
+          result={flow.result}
+          onScanAnother={flow.reset}
+          upscaleStatus={flow.upscaleStatus}
+          upscaleProgress={flow.upscaleProgress}
+        />
       )}
 
       {flow.loading && <LoadingOverlay text={flow.loading} />}

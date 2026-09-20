@@ -36,6 +36,7 @@ export interface ProcessResponse {
 
 export interface ProcessStatusResponse {
   status: 'idle' | 'running' | 'done' | 'error'
+  progress?: { done: number; total: number }
   result?: string
   download_url?: string
   error?: string

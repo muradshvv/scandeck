@@ -37,6 +37,7 @@ export function useScanFlow() {
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [upscaleStatus, setUpscaleStatus] = useState<'idle' | 'running' | 'error'>('idle')
+  const [upscaleProgress, setUpscaleProgress] = useState<{ done: number; total: number } | null>(null)
 
   const upload = useCallback(async (file: File): Promise<boolean> => {
     setError(null)
@@ -93,8 +94,7 @@ export function useScanFlow() {
   const pollUpscale = useCallback(async (id: string) => {
     activePollId.current = id
     setUpscaleStatus('running')
-    // this can take several minutes on a free-tier server since the model
-    // runs on small tiles to stay within its memory limits
+    setUpscaleProgress(null)
     const MAX_CONSECUTIVE_FAILURES = 8
     let consecutiveFailures = 0
     for (let attempt = 0; attempt < 400; attempt++) {
@@ -104,13 +104,18 @@ export function useScanFlow() {
         const status = await fetchProcessStatus(id)
         if (activePollId.current !== id) return
         consecutiveFailures = 0
+        if (status.status === 'running' && status.progress) {
+          setUpscaleProgress(status.progress)
+        }
         if (status.status === 'done' && status.result && status.download_url) {
           setResult((prev) => (prev && prev.id === id ? { ...prev, result: status.result!, download_url: status.download_url! } : prev))
           setUpscaleStatus('idle')
+          setUpscaleProgress(null)
           return
         }
         if (status.status === 'error') {
           setUpscaleStatus('error')
+          setUpscaleProgress(null)
           return
         }
       } catch (err) {
@@ -118,11 +123,13 @@ export function useScanFlow() {
         consecutiveFailures++
         if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
           setUpscaleStatus('error')
+          setUpscaleProgress(null)
           return
         }
       }
     }
     setUpscaleStatus('error')
+    setUpscaleProgress(null)
   }, [])
 
   const confirm = useCallback(async (mode: EnhanceMode, upscale: boolean): Promise<boolean> => {
@@ -151,6 +158,7 @@ export function useScanFlow() {
   const reset = useCallback(() => {
     activePollId.current = null
     setUpscaleStatus('idle')
+    setUpscaleProgress(null)
     setSession(null)
     setResult(null)
     setError(null)
@@ -164,6 +172,7 @@ export function useScanFlow() {
     loading,
     error,
     upscaleStatus,
+    upscaleProgress,
     clearError: () => setError(null),
     upload,
     updateCorners,

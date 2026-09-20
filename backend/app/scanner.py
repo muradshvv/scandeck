@@ -186,7 +186,7 @@ def enhance(image, mode="color"):
 
 
 def upscale_to_hd(image, progress_cb=None):
-    if superres.is_available():
+    if superres.weights_available() and superres.is_available():
         return superres.upscale_tiled(image, progress_cb=progress_cb)
 
     h, w = image.shape[:2]

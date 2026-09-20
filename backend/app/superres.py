@@ -22,6 +22,10 @@ _model = None
 _load_attempted = False
 
 
+def weights_available():
+    return WEIGHTS_PATH.exists()
+
+
 def _build_model():
     import torch
     import torch.nn as nn
@@ -136,12 +140,6 @@ def upscale(image_bgr):
 
 
 def upscale_tiled(image_bgr, progress_cb=None):
-    """Runs the model on small overlapping tiles so peak memory stays bounded
-    regardless of the source image's size (RRDBNet's memory use grows with the
-    square of input size when run on a whole image at once). The output is
-    written to a memory-mapped temp file, not an in-RAM array - a naive
-    in-memory buffer for the full 4x output (e.g. ~192MB for a 2000px source)
-    was itself enough to blow a 512MB host even with tiny per-tile inference."""
     if not is_available():
         raise RuntimeError("Super-resolution model is not available (torch missing or weights not found)")
 
@@ -183,10 +181,6 @@ def upscale_tiled(image_bgr, progress_cb=None):
                     tile_bgr, pad_top, pad_bottom, pad_left, pad_right, cv2.BORDER_REFLECT
                 )
 
-            # every tile is fed to the model at the same fixed shape - a varying
-            # shape per tile (edge tiles used to be smaller) made PyTorch's CPU
-            # allocator keep a separate memory pool per shape it had seen,
-            # so peak memory kept climbing as more distinct edge shapes showed up
             tile = cv2.cvtColor(tile_bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
             tensor = torch.from_numpy(tile.transpose(2, 0, 1)).unsqueeze(0)
             with torch.no_grad():
