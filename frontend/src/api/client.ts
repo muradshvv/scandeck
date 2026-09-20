@@ -1,4 +1,4 @@
-import type { EnhanceMode, HistoryEntry, OcrResult, ProcessResponse, UploadResponse } from '../types'
+import type { EnhanceMode, HistoryEntry, OcrResult, ProcessResponse, ProcessStatusResponse, UploadResponse } from '../types'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 
@@ -36,6 +36,12 @@ export async function processImage(
     body: JSON.stringify({ id, corners, mode, upscale, rotation_steps: rotationSteps }),
   })
   if (!res.ok) throw new Error(await parseErrorDetail(res, 'Processing failed'))
+  return res.json()
+}
+
+export async function fetchProcessStatus(id: string): Promise<ProcessStatusResponse> {
+  const res = await fetch(apiUrl(`/api/process/${id}/status`))
+  if (!res.ok) throw new Error(await parseErrorDetail(res, 'Failed to check enhancement status'))
   return res.json()
 }
 

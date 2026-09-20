@@ -185,9 +185,9 @@ def enhance(image, mode="color"):
     return sharpened
 
 
-def upscale_to_hd(image):
+def upscale_to_hd(image, progress_cb=None):
     if superres.is_available():
-        return superres.upscale(image)
+        return superres.upscale_tiled(image, progress_cb=progress_cb)
 
     h, w = image.shape[:2]
     scale = 3840/max(h, w)

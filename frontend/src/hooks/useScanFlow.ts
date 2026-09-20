@@ -1,7 +1,13 @@
-import { useCallback, useState } from 'react'
-import { processImage, uploadImage } from '../api/client'
+import { useCallback, useRef, useState } from 'react'
+import { fetchProcessStatus, processImage, uploadImage } from '../api/client'
 import { rotateCorners, rotatedDims, rotateImageDataUrl } from '../lib/rotate'
 import type { EnhanceMode, ProcessResponse, ScanStep } from '../types'
+
+const UPSCALE_POLL_INTERVAL_MS = 3000
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -26,9 +32,11 @@ export interface ScanSession {
 export function useScanFlow() {
   const [step, setStep] = useState<ScanStep>('upload')
   const [session, setSession] = useState<ScanSession | null>(null)
+  const activePollId = useRef<string | null>(null)
   const [result, setResult] = useState<ProcessResponse | null>(null)
   const [loading, setLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [upscaleStatus, setUpscaleStatus] = useState<'idle' | 'running' | 'error'>('idle')
 
   const upload = useCallback(async (file: File): Promise<boolean> => {
     setError(null)
@@ -82,14 +90,48 @@ export function useScanFlow() {
     setSession((prev) => (prev ? { ...prev, corners: prev.detectedCorners } : prev))
   }, [])
 
+  const pollUpscale = useCallback(async (id: string) => {
+    activePollId.current = id
+    setUpscaleStatus('running')
+    // this can take several minutes on a free-tier server since the model
+    // runs on small tiles to stay within its memory limits
+    for (let attempt = 0; attempt < 200; attempt++) {
+      await sleep(UPSCALE_POLL_INTERVAL_MS)
+      if (activePollId.current !== id) return
+      try {
+        const status = await fetchProcessStatus(id)
+        if (activePollId.current !== id) return
+        if (status.status === 'done' && status.result && status.download_url) {
+          setResult((prev) => (prev && prev.id === id ? { ...prev, result: status.result!, download_url: status.download_url! } : prev))
+          setUpscaleStatus('idle')
+          return
+        }
+        if (status.status === 'error') {
+          setUpscaleStatus('error')
+          return
+        }
+      } catch {
+        setUpscaleStatus('error')
+        return
+      }
+    }
+    setUpscaleStatus('error')
+  }, [])
+
   const confirm = useCallback(async (mode: EnhanceMode, upscale: boolean): Promise<boolean> => {
     if (!session) return false
     setError(null)
-    setLoading(upscale ? 'Cropping & enhancing (upscale takes longer)…' : 'Cropping & enhancing…')
+    setLoading('Cropping & enhancing…')
     try {
       const processData = await processImage(session.id, session.corners, mode, upscale, session.rotationSteps)
       setResult(processData)
       setStep('result')
+      if (processData.upscale_pending) {
+        pollUpscale(processData.id)
+      } else {
+        activePollId.current = null
+        setUpscaleStatus('idle')
+      }
       return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Processing failed')
@@ -97,9 +139,11 @@ export function useScanFlow() {
     } finally {
       setLoading(null)
     }
-  }, [session])
+  }, [session, pollUpscale])
 
   const reset = useCallback(() => {
+    activePollId.current = null
+    setUpscaleStatus('idle')
     setSession(null)
     setResult(null)
     setError(null)
@@ -112,6 +156,7 @@ export function useScanFlow() {
     result,
     loading,
     error,
+    upscaleStatus,
     clearError: () => setError(null),
     upload,
     updateCorners,

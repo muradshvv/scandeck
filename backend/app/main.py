@@ -53,6 +53,10 @@ def _open_browser():
 _sessions = {}
 _sessions_lock = threading.Lock()
 
+# id -> {"status": "running" | "done" | "error", "error": str}
+_jobs = {}
+_jobs_lock = threading.Lock()
+
 
 def _cleanup_expired():
     now = time.time()
@@ -85,6 +89,41 @@ def _delete_transient_files(session_id):
 def _write_image(path, image):
     if not cv2.imwrite(str(path), image):
         raise HTTPException(500, "Failed to save image")
+
+
+def _thumbnail_b64(source, max_dim=480):
+    sh, sw = source.shape[:2]
+    scale = min(1.0, max_dim / max(sh, sw))
+    thumb = cv2.resize(source, (int(sw * scale), int(sh * scale)), interpolation=cv2.INTER_AREA)
+    return _encode_image_b64(thumb, ext=".jpg")
+
+
+def _run_upscale_job(session_id, out_path, history_filename):
+    try:
+        image = cv2.imread(str(out_path))
+        if image is None:
+            raise RuntimeError("Could not reload the processed image for upscaling")
+
+        upscaled = scanner.upscale_to_hd(image)
+
+        _write_image(out_path, upscaled)
+        _write_image(HISTORY_DIR / history_filename, upscaled)
+
+        entries = history.list_entries(HISTORY_DIR)
+        entry = next((e for e in entries if e["id"] == session_id), None)
+        if entry:
+            rh, rw = upscaled.shape[:2]
+            entry["upscaled"] = True
+            entry["width"] = rw
+            entry["height"] = rh
+            entry["thumbnail"] = _thumbnail_b64(upscaled)
+            history.add_entry(HISTORY_DIR, entry)
+
+        with _jobs_lock:
+            _jobs[session_id] = {"status": "done"}
+    except Exception as exc:
+        with _jobs_lock:
+            _jobs[session_id] = {"status": "error", "error": str(exc)}
 
 
 
@@ -188,8 +227,13 @@ async def process_image(req: ProcessRequest):
 
     warped = scanner.warp_document(image, corners)
     result = scanner.enhance(warped, mode=req.mode)
+
+    upscale_pending = False
     if req.upscale:
-        result = scanner.upscale_to_hd(result)
+        if scanner.superres.is_available():
+            upscale_pending = True
+        else:
+            result = scanner.upscale_to_hd(result)
 
     ext = ".png" if req.mode == "bw" else ".jpg"
     out_path = OUTPUT_DIR / f"{req.id}{ext}"
@@ -198,18 +242,12 @@ async def process_image(req: ProcessRequest):
     history_filename = f"{req.id}{ext}"
     _write_image(HISTORY_DIR / history_filename, result)
 
-    def _thumbnail_b64(source, max_dim=480):
-        sh, sw = source.shape[:2]
-        scale = min(1.0, max_dim / max(sh, sw))
-        thumb = cv2.resize(source, (int(sw * scale), int(sh * scale)), interpolation=cv2.INTER_AREA)
-        return _encode_image_b64(thumb, ext=".jpg")
-
     rh, rw = result.shape[:2]
     history.add_entry(HISTORY_DIR, {
         "id": req.id,
         "created_at": history.now_iso(),
         "mode": req.mode,
-        "upscaled": req.upscale,
+        "upscaled": req.upscale and not upscale_pending,
         "filename": history_filename,
         "width": rw,
         "height": rh,
@@ -217,10 +255,44 @@ async def process_image(req: ProcessRequest):
         "thumbnail": _thumbnail_b64(result),
     })
 
+    if upscale_pending:
+        with _jobs_lock:
+            _jobs[req.id] = {"status": "running"}
+        threading.Thread(
+            target=_run_upscale_job,
+            args=(req.id, out_path, history_filename),
+            daemon=True,
+        ).start()
+
     return {
         "id": req.id,
         "result": _encode_image_b64(result, ext=ext),
         "download_url": f"/api/download/{req.id}?ext={ext.lstrip('.')}",
+        "upscale_pending": upscale_pending,
+    }
+
+
+@app.get("/api/process/{session_id}/status")
+async def process_status(session_id: str):
+    with _jobs_lock:
+        job = dict(_jobs.get(session_id, {"status": "idle"}))
+
+    if job["status"] != "done":
+        return job
+
+    path = _find_source_image_path(session_id)
+    if path is None:
+        return {"status": "error", "error": "Result not found"}
+
+    ext = path.suffix
+    image = cv2.imread(str(path))
+    if image is None:
+        return {"status": "error", "error": "Result could not be read"}
+
+    return {
+        "status": "done",
+        "result": _encode_image_b64(image, ext=ext),
+        "download_url": f"/api/download/{session_id}?ext={ext.lstrip('.')}",
     }
 
 

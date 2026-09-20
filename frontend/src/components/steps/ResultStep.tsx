@@ -167,9 +167,11 @@ function ExtractedText({ id }: { id: string }) {
 export function ResultStep({
   result,
   onScanAnother,
+  upscaleStatus,
 }: {
   result: ProcessResponse
   onScanAnother: () => void
+  upscaleStatus: 'idle' | 'running' | 'error'
 }) {
   const { showToast } = useToast()
 
@@ -177,6 +179,7 @@ export function ResultStep({
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imgRef = useRef<HTMLImageElement | null>(null)
   const [imgLoaded, setImgLoaded] = useState(false)
+  const prevUpscaleStatus = useRef(upscaleStatus)
 
   useEffect(() => {
     setImgLoaded(false)
@@ -194,6 +197,15 @@ export function ResultStep({
     renderAdjusted(canvasRef.current, imgRef.current, params)
   }, [params, imgLoaded])
 
+  useEffect(() => {
+    if (prevUpscaleStatus.current === 'running' && upscaleStatus === 'idle') {
+      showToast('Ultra HD upscale applied')
+    } else if (prevUpscaleStatus.current === 'running' && upscaleStatus === 'error') {
+      showToast('Ultra HD upscale failed - showing the standard scan instead', 'error')
+    }
+    prevUpscaleStatus.current = upscaleStatus
+  }, [upscaleStatus, showToast])
+
   const handleCopy = async () => {
     try {
       const blob = await toPngBlob(result.result)
@@ -210,6 +222,12 @@ export function ResultStep({
         <div className="flex max-h-[56vh] items-center justify-center overflow-hidden rounded-lg bg-[var(--color-surface-3)] ring-1 ring-inset ring-black/5">
           <canvas ref={canvasRef} aria-label="scanned document" className="max-h-[56vh] max-w-full" />
         </div>
+        {upscaleStatus === 'running' && (
+          <div className="mt-3 flex items-center justify-center gap-2 text-xs text-[var(--color-text-muted)]">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Running Ultra HD upscale in the background - this can take a few minutes…
+          </div>
+        )}
       </div>
 
       <div className="inline-flex items-center divide-x divide-[var(--color-border)] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">

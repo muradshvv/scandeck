@@ -31,6 +31,14 @@ export interface ProcessResponse {
   id: string
   result: string
   download_url: string
+  upscale_pending?: boolean
+}
+
+export interface ProcessStatusResponse {
+  status: 'idle' | 'running' | 'done' | 'error'
+  result?: string
+  download_url?: string
+  error?: string
 }
 
 

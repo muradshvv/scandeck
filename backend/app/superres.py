@@ -8,6 +8,11 @@ WEIGHTS_PATH = MODEL_DIR / "ultra_hd_upscaler.pt"
 
 MAX_INPUT_DIM = 1000
 
+TILE = 128
+TILE_PAD = 10
+TILE_SCALE = 4
+MAX_TILED_SOURCE_DIM = 2000
+
 _model = None
 _load_attempted = False
 
@@ -120,4 +125,53 @@ def upscale(image_bgr):
 
     out = out.squeeze(0).clamp(0.0, 1.0).numpy().transpose(1, 2, 0)
     out = (out * 255.0).round().astype(np.uint8)
+    return cv2.cvtColor(out, cv2.COLOR_RGB2BGR)
+
+
+def upscale_tiled(image_bgr, progress_cb=None):
+    """Runs the model on small overlapping tiles so peak memory stays bounded
+    regardless of the source image's size (RRDBNet's memory use grows with the
+    square of input size when run on a whole image at once)."""
+    if not is_available():
+        raise RuntimeError("Super-resolution model is not available (torch missing or weights not found)")
+
+    import torch
+
+    h, w = image_bgr.shape[:2]
+    scale = min(1.0, MAX_TILED_SOURCE_DIM / max(h, w))
+    if scale < 1.0:
+        image_bgr = cv2.resize(image_bgr, (round(w * scale), round(h * scale)), interpolation=cv2.INTER_AREA)
+        h, w = image_bgr.shape[:2]
+
+    rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+    out = np.zeros((h * TILE_SCALE, w * TILE_SCALE, 3), dtype=np.uint8)
+
+    cols = -(-w // TILE)
+    rows = -(-h // TILE)
+    total = cols * rows
+    done = 0
+
+    for row in range(rows):
+        for col in range(cols):
+            tx, ty = col * TILE, row * TILE
+            tw, th = min(TILE, w - tx), min(TILE, h - ty)
+            px, py = max(0, tx - TILE_PAD), max(0, ty - TILE_PAD)
+            pw = min(w, tx + tw + TILE_PAD) - px
+            ph = min(h, ty + th + TILE_PAD) - py
+
+            tile = rgb[py:py + ph, px:px + pw]
+            tensor = torch.from_numpy(tile.transpose(2, 0, 1)).unsqueeze(0)
+            with torch.no_grad():
+                pred = _model(tensor)
+            pred = pred.squeeze(0).clamp(0.0, 1.0).numpy().transpose(1, 2, 0)
+
+            cx, cy = (tx - px) * TILE_SCALE, (ty - py) * TILE_SCALE
+            cw, ch = tw * TILE_SCALE, th * TILE_SCALE
+            crop = (pred[cy:cy + ch, cx:cx + cw] * 255.0).round().astype(np.uint8)
+            out[ty * TILE_SCALE:ty * TILE_SCALE + ch, tx * TILE_SCALE:tx * TILE_SCALE + cw] = crop
+
+            done += 1
+            if progress_cb:
+                progress_cb(done, total)
+
     return cv2.cvtColor(out, cv2.COLOR_RGB2BGR)
