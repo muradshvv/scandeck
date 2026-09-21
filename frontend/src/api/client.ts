@@ -45,6 +45,10 @@ export async function fetchOcrText(id: string): Promise<OcrResult> {
   return res.json()
 }
 
+export async function pingBackend(): Promise<void> {
+  await fetch(apiUrl('/api/health')).catch(() => {})
+}
+
 export async function exportPdf(imageBlob: Blob, variant: 'flattened' | 'searchable'): Promise<Blob> {
   const formData = new FormData()
   formData.append('file', imageBlob, 'scan.png')

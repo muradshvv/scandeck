@@ -1,7 +1,7 @@
 import { Columns2, Download, FileText, LayoutGrid, List, History as HistoryIcon, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { exportPdf } from '../../api/client'
-import { deleteHistoryEntry, listHistoryEntries } from '../../lib/historyStore'
+import { deleteHistoryEntry, downloadBlob, listHistoryEntries } from '../../lib/historyStore'
 import { BeforeAfterSlider } from '../BeforeAfterSlider'
 import { useToast } from '../ToastContext'
 import type { LocalHistoryEntry } from '../../lib/historyStore'
@@ -27,15 +27,6 @@ function matchesQuery(entry: LocalHistoryEntry, query: string) {
   if (!query.trim()) return true
   const haystack = `${modeLabel(entry)} ${formatDate(entry.created_at)}`.toLowerCase()
   return haystack.includes(query.trim().toLowerCase())
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
 }
 
 function CompareModal({ entry, onClose }: { entry: LocalHistoryEntry; onClose: () => void }) {

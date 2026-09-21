@@ -90,3 +90,12 @@ export function canvasToBlob(canvas: HTMLCanvasElement, type = 'image/png'): Pro
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('toBlob failed'))), type)
   })
 }
+
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}

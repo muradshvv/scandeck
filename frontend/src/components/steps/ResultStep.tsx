@@ -1,11 +1,11 @@
 import { ChevronDown, Clipboard, Download, FileText, Loader2, Maximize2, RefreshCcw, ScanText } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { apiUrl, fetchOcrText } from '../../api/client'
+import { exportPdf, fetchOcrText, pingBackend } from '../../api/client'
 import { AdjustmentPanel } from '../AdjustmentPanel'
 import { useToast } from '../ToastContext'
 import { DEFAULT_ADJUST_PARAMS, renderAdjusted } from '../../lib/imageAdjust'
 import { canvasToImage, upscaleTiled } from '../../lib/upscale'
-import { canvasToBlob, listHistoryEntries, makeThumbnail, upsertHistoryEntry } from '../../lib/historyStore'
+import { canvasToBlob, downloadBlob, listHistoryEntries, makeThumbnail, upsertHistoryEntry } from '../../lib/historyStore'
 import type { AdjustParams } from '../../lib/imageAdjust'
 import type { OcrResult, ProcessResponse } from '../../types'
 
@@ -20,11 +20,22 @@ type OcrState =
 const toolbarButtonClass =
   'flex h-11 items-center gap-2 px-4 text-sm font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)]'
 
-function ExportMenu({ downloadUrl }: { downloadUrl: string }) {
+function ExportMenu({ canvasRef }: { canvasRef: React.RefObject<HTMLCanvasElement | null> }) {
   const [open, setOpen] = useState(false)
   const closeTimer = useRef<number | undefined>(undefined)
+  const { showToast } = useToast()
 
-  const pdfBase = downloadUrl.replace(/ext=\w+/, 'ext=pdf')
+  const handleExport = async (variant: 'flattened' | 'searchable') => {
+    setOpen(false)
+    if (!canvasRef.current) return
+    try {
+      const blob = await canvasToBlob(canvasRef.current)
+      const pdfBlob = await exportPdf(blob, variant)
+      downloadBlob(pdfBlob, 'scanned_document.pdf')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'PDF export failed', 'error')
+    }
+  }
 
   return (
     <div
@@ -41,22 +52,20 @@ function ExportMenu({ downloadUrl }: { downloadUrl: string }) {
       </button>
       {open && (
         <div className="absolute left-0 z-10 mt-1 w-56 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-float)]">
-          <a
-            href={`${pdfBase}&variant=flattened`}
-            download="scanned_document.pdf"
-            className="block px-4 py-2.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)]"
+          <button
+            onClick={() => handleExport('flattened')}
+            className="block w-full px-4 py-2.5 text-left text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)]"
           >
             <div className="font-medium text-[var(--color-text)]">Standard PDF</div>
             <div className="text-xs text-[var(--color-text-muted)]">Image only, no text layer</div>
-          </a>
-          <a
-            href={`${pdfBase}&variant=searchable`}
-            download="scanned_document.pdf"
-            className="block border-t border-[var(--color-border)] px-4 py-2.5 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)]"
+          </button>
+          <button
+            onClick={() => handleExport('searchable')}
+            className="block w-full border-t border-[var(--color-border)] px-4 py-2.5 text-left text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-3)] hover:text-[var(--color-text)]"
           >
             <div className="font-medium text-[var(--color-text)]">Searchable OCR PDF</div>
             <div className="text-xs text-[var(--color-text-muted)]">Adds a selectable text layer</div>
-          </a>
+          </button>
         </div>
       )}
     </div>
@@ -187,6 +196,13 @@ export function ResultStep({
     renderAdjusted(canvasRef.current, imgRef.current, params)
   }, [params, imgLoaded])
 
+  useEffect(() => {
+    if (upscaleStatus !== 'running') return
+    pingBackend()
+    const interval = setInterval(pingBackend, 4 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [upscaleStatus])
+
   const handleAiUpscale = useCallback(async () => {
     if (!imgRef.current || !canvasRef.current) return
     setUpscaleStatus('running')
@@ -237,6 +253,16 @@ export function ResultStep({
       showToast('Copied to clipboard')
     } catch {
       showToast('Copy failed, your browser may not support this', 'error')
+    }
+  }
+
+  const handleDownload = async () => {
+    if (!canvasRef.current) return
+    try {
+      const blob = await canvasToBlob(canvasRef.current)
+      downloadBlob(blob, 'scanned_document.png')
+    } catch {
+      showToast('Download failed, your browser may not support this', 'error')
     }
   }
 
@@ -294,15 +320,14 @@ export function ResultStep({
       </div>
 
       <div className="inline-flex items-center divide-x divide-[var(--color-border)] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
-        <a
-          href={apiUrl(result.download_url)}
-          download="scanned_document"
+        <button
+          onClick={handleDownload}
           className="flex h-11 items-center gap-2 rounded-l-lg bg-[var(--color-accent)] px-5 text-sm font-semibold text-white transition-colors hover:bg-[var(--color-accent-hover)]"
         >
           <Download className="h-4 w-4" />
           Download
-        </a>
-        <ExportMenu downloadUrl={apiUrl(result.download_url)} />
+        </button>
+        <ExportMenu canvasRef={canvasRef} />
         <button onClick={handleCopy} className={toolbarButtonClass}>
           <Clipboard className="h-4 w-4" />
           Copy
