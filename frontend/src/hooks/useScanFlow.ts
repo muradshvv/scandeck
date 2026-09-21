@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import { processImage, uploadImage } from '../api/client'
+import { dataUrlToBlob, makeThumbnail, upsertHistoryEntry } from '../lib/historyStore'
 import { rotateCorners, rotatedDims, rotateImageDataUrl } from '../lib/rotate'
 import type { EnhanceMode, ProcessResponse, ScanStep } from '../types'
 
@@ -90,6 +91,25 @@ export function useScanFlow() {
       const processData = await processImage(session.id, session.corners, mode, upscale, session.rotationSteps)
       setResult(processData)
       setStep('result')
+
+      try {
+        const [resultImg, beforeImg] = await Promise.all([loadImage(processData.result), loadImage(session.preview)])
+        await upsertHistoryEntry({
+          id: processData.id,
+          created_at: new Date().toISOString(),
+          mode,
+          upscaled: false,
+          width: resultImg.naturalWidth,
+          height: resultImg.naturalHeight,
+          ext: mode === 'bw' ? 'png' : 'jpg',
+          thumbnail: makeThumbnail(resultImg),
+          before_thumbnail: makeThumbnail(beforeImg),
+          imageBlob: await dataUrlToBlob(processData.result),
+        })
+      } catch (err) {
+        console.error('Failed to save history entry', err)
+      }
+
       return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Processing failed')

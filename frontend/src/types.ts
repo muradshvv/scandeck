@@ -5,19 +5,6 @@ export type ScanStep = 'upload' | 'adjust' | 'result'
 
 export type Page = 'scan' | 'history' | 'settings'
 
-export interface HistoryEntry {
-  id: string
-  created_at: string
-  mode: EnhanceMode
-  upscaled?: boolean
-  filename: string
-  width: number
-  height: number
-  thumbnail: string
-  before_thumbnail: string
-}
-
-
 export interface UploadResponse {
   id: string
   width: number

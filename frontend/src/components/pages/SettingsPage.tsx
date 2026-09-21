@@ -1,7 +1,7 @@
 import { Check, Moon, Sun, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { clearHistory } from '../../api/client'
+import { clearHistoryEntries } from '../../lib/historyStore'
 import { useToast } from '../ToastContext'
 import type { SettingsStore } from '../../hooks/useSettings'
 import type { EnhanceMode } from '../../types'
@@ -53,7 +53,7 @@ export function SettingsPage({ store }: { store: SettingsStore }) {
     if (!window.confirm('Delete all scan history? This cannot be undone.')) return
     setClearing(true)
     try {
-      await clearHistory()
+      await clearHistoryEntries()
       showToast('History cleared')
     } catch {
       showToast('Failed to clear history', 'error')
@@ -101,7 +101,7 @@ export function SettingsPage({ store }: { store: SettingsStore }) {
         <Toggle checked={settings.autoDownload} onChange={(v) => update('autoDownload', v)} />
       </Row>
 
-      <Row title="Clear history" description="Permanently delete all saved scans from the History page.">
+      <Row title="Clear history" description="Permanently delete all saved scans, stored in this browser, from the History page.">
         <button
           onClick={handleClearHistory}
           disabled={clearing}

@@ -5,6 +5,7 @@ import { AdjustmentPanel } from '../AdjustmentPanel'
 import { useToast } from '../ToastContext'
 import { DEFAULT_ADJUST_PARAMS, renderAdjusted } from '../../lib/imageAdjust'
 import { canvasToImage, upscaleTiled } from '../../lib/upscale'
+import { canvasToBlob, listHistoryEntries, makeThumbnail, upsertHistoryEntry } from '../../lib/historyStore'
 import type { AdjustParams } from '../../lib/imageAdjust'
 import type { OcrResult, ProcessResponse } from '../../types'
 
@@ -198,25 +199,35 @@ export function ResultStep({
       setUpscaleStatus('idle')
       setUpscaleProgress(null)
       showToast('Ultra HD upscale applied - click the photo to see it at full size')
+
+      try {
+        const existing = (await listHistoryEntries()).find((e) => e.id === result.id)
+        if (existing) {
+          await upsertHistoryEntry({
+            ...existing,
+            upscaled: true,
+            width: canvas.width,
+            height: canvas.height,
+            thumbnail: makeThumbnail(canvas),
+            imageBlob: await canvasToBlob(canvas),
+          })
+        }
+      } catch (err) {
+        console.error('Failed to update history entry after upscale', err)
+      }
     } catch (err) {
       console.error(err)
       setUpscaleStatus('error')
       setUpscaleProgress(null)
       showToast('Ultra HD upscale failed - showing the standard scan instead', 'error')
     }
-  }, [params, showToast])
+  }, [params, showToast, result.id])
 
   useEffect(() => {
     if (!imgLoaded || !autoAiUpscale || upscaleAttempted.current) return
     upscaleAttempted.current = true
     handleAiUpscale()
   }, [imgLoaded, autoAiUpscale, handleAiUpscale])
-
-  const canvasToBlob = (canvas: HTMLCanvasElement): Promise<Blob> => {
-    return new Promise((resolve, reject) => {
-      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('toBlob failed'))), 'image/png')
-    })
-  }
 
   const handleCopy = async () => {
     if (!canvasRef.current) return

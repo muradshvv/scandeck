@@ -1,9 +1,10 @@
 import { Columns2, Download, FileText, LayoutGrid, List, History as HistoryIcon, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { apiUrl, deleteHistoryEntry, fetchHistory } from '../../api/client'
+import { exportPdf } from '../../api/client'
+import { deleteHistoryEntry, listHistoryEntries } from '../../lib/historyStore'
 import { BeforeAfterSlider } from '../BeforeAfterSlider'
 import { useToast } from '../ToastContext'
-import type { HistoryEntry } from '../../types'
+import type { LocalHistoryEntry } from '../../lib/historyStore'
 
 const MODE_LABELS: Record<string, string> = {
   color: 'Color',
@@ -17,19 +18,27 @@ function formatDate(iso: string) {
   return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-function modeLabel(entry: HistoryEntry) {
+function modeLabel(entry: LocalHistoryEntry) {
   const base = MODE_LABELS[entry.mode] ?? entry.mode
   return entry.upscaled ? `${base} + Ultra HD` : base
 }
 
-function matchesQuery(entry: HistoryEntry, query: string) {
+function matchesQuery(entry: LocalHistoryEntry, query: string) {
   if (!query.trim()) return true
-  const haystack = `${modeLabel(entry)} ${formatDate(entry.created_at)} ${entry.filename}`.toLowerCase()
+  const haystack = `${modeLabel(entry)} ${formatDate(entry.created_at)}`.toLowerCase()
   return haystack.includes(query.trim().toLowerCase())
 }
 
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
-function CompareModal({ entry, onClose }: { entry: HistoryEntry; onClose: () => void }) {
+function CompareModal({ entry, onClose }: { entry: LocalHistoryEntry; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)
@@ -59,10 +68,25 @@ function EntryActions({
   onCompare,
   onDelete,
 }: {
-  entry: HistoryEntry
+  entry: LocalHistoryEntry
   onCompare: () => void
   onDelete: () => void
 }) {
+  const { showToast } = useToast()
+
+  const handleDownloadImage = () => {
+    downloadBlob(entry.imageBlob, `scanned_document.${entry.ext}`)
+  }
+
+  const handleDownloadPdf = async () => {
+    try {
+      const pdfBlob = await exportPdf(entry.imageBlob, 'flattened')
+      downloadBlob(pdfBlob, 'scanned_document.pdf')
+    } catch {
+      showToast('PDF export failed', 'error')
+    }
+  }
+
   return (
     <div className="flex shrink-0 gap-1.5">
       <button
@@ -72,22 +96,20 @@ function EntryActions({
       >
         <Columns2 className="h-3.5 w-3.5" />
       </button>
-      <a
-        href={apiUrl(`/api/download/${entry.id}?ext=${entry.filename.split('.').pop()}`)}
-        download="scanned_document"
+      <button
+        onClick={handleDownloadImage}
         title="Download image"
         className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
       >
         <Download className="h-3.5 w-3.5" />
-      </a>
-      <a
-        href={apiUrl(`/api/download/${entry.id}?ext=pdf`)}
-        download="scanned_document.pdf"
+      </button>
+      <button
+        onClick={handleDownloadPdf}
         title="Download as PDF"
         className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] transition-colors hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
       >
         <FileText className="h-3.5 w-3.5" />
-      </a>
+      </button>
       <button
         onClick={onDelete}
         title="Delete"
@@ -100,7 +122,7 @@ function EntryActions({
 }
 
 
-function GridCard({ entry, onCompare, onDelete }: { entry: HistoryEntry; onCompare: () => void; onDelete: () => void }) {
+function GridCard({ entry, onCompare, onDelete }: { entry: LocalHistoryEntry; onCompare: () => void; onDelete: () => void }) {
   return (
     <div className="group overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-card)]">
       <button onClick={onCompare} className="flex h-40 w-full items-center justify-center bg-[var(--color-surface-3)]" title="Compare before / after">
@@ -117,7 +139,7 @@ function GridCard({ entry, onCompare, onDelete }: { entry: HistoryEntry; onCompa
   )
 }
 
-function ListRow({ entry, onCompare, onDelete }: { entry: HistoryEntry; onCompare: () => void; onDelete: () => void }) {
+function ListRow({ entry, onCompare, onDelete }: { entry: LocalHistoryEntry; onCompare: () => void; onDelete: () => void }) {
   return (
     <div className="flex items-center gap-4 border-b border-[var(--color-border)] px-4 py-3 last:border-b-0">
       <button onClick={onCompare} className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[var(--color-surface-3)]">
@@ -144,13 +166,13 @@ export function HistoryPage({
   compact?: boolean
   onViewAll?: () => void
 }) {
-  const [entries, setEntries] = useState<HistoryEntry[] | null>(null)
-  const [compareEntry, setCompareEntry] = useState<HistoryEntry | null>(null)
+  const [entries, setEntries] = useState<LocalHistoryEntry[] | null>(null)
+  const [compareEntry, setCompareEntry] = useState<LocalHistoryEntry | null>(null)
   const [view, setView] = useState<'grid' | 'list'>('grid')
   const { showToast } = useToast()
 
   const load = () => {
-    fetchHistory()
+    listHistoryEntries()
       .then(setEntries)
       .catch(() => showToast('Failed to load history', 'error'))
   }

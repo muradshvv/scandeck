@@ -113,8 +113,11 @@ be served separately (e.g. `npm run preview`, or any static file host) with
    searchable PDF).
 
 Uploads and processed files live under `backend/storage/` and expire after an
-hour. Completed scans also get a permanent history entry until deleted.
-Nothing leaves localhost.
+hour - this is scratch space for the current session, not history storage.
+Scan history itself lives entirely in the browser (`frontend/src/lib/historyStore.ts`,
+IndexedDB) so it survives backend restarts/redeploys and free-tier host
+sleep cycles, which would otherwise wipe anything stored server-side.
+Nothing leaves localhost when run locally.
 
 ## Ultra HD upscale
 
@@ -166,14 +169,13 @@ CVPROJ/
 │   ├── requirements-ml.txt       Optional: torch, for the MobileNetV2 fallback corner detector.
 │   ├── requirements-ocr.txt       Optional: EasyOCR, for text extraction and searchable PDFs.
 │   └── app/
-│       ├── main.py                API routes: /api/upload, /api/process, /api/download, /api/ocr, history.
+│       ├── main.py                API routes: /api/upload, /api/process, /api/download, /api/ocr, /api/export.
 │       ├── model_paths.py         Resolves ml/models/ regardless of where the app is run from.
 │       ├── detector.py            Primary corner detector
 │       ├── scanner.py             Classical CV corner fallback, perspective warp, color/gray/b&w enhance.
 │       ├── corner_model.py        Less accurate trained corner detector (document_detector_2.pt).
 │       ├── ocr.py                 EasyOCR text extraction.
-│       ├── pdf_export.py          Builds searchable PDFs from OCR word boxes.
-│       └── history.py             Reads/writes the scan history index.
+│       └── pdf_export.py          Builds searchable PDFs from OCR word boxes.
 │
 ├── frontend/               
 │   ├── vercel.json             Vercel build config (see "Deploying" above).
@@ -186,6 +188,7 @@ CVPROJ/
 │       │   ├── useScanFlow.ts         Drives the upload → adjust → result flow and its state.
 │       │   └── useSettings.ts         Persists theme/default mode/toggles to localStorage.
 │       ├── lib/
+│       │   ├── historyStore.ts        Scan history, stored in the browser (IndexedDB), not the server.
 │       │   ├── imageAdjust.ts         Client-side brightness/contrast/etc. canvas adjustments.
 │       │   ├── rotate.ts              Rotation math kept in sync with scanner.py's cv2.rotate geometry.
 │       │   └── upscale.ts             Ultra HD upscale - runs the ONNX model in-browser, tile by tile.

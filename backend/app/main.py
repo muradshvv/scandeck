@@ -16,16 +16,14 @@ from fastapi.responses import FileResponse, Response
 from PIL import Image
 from pydantic import BaseModel, Field, field_validator
 
-from . import corner_model, detector, history, ocr, pdf_export, scanner
+from . import corner_model, detector, ocr, pdf_export, scanner
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 UPLOAD_DIR = BASE_DIR / "storage" / "uploads"
 OUTPUT_DIR = BASE_DIR / "storage" / "outputs"
-HISTORY_DIR = BASE_DIR / "storage" / "history"
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-HISTORY_DIR.mkdir(parents=True, exist_ok=True)
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20MB
 SESSION_TTL_SECONDS = 60 * 60  # 1 hour
@@ -75,23 +73,9 @@ def _cleanup_expired():
 
 
 
-def _delete_transient_files(session_id):
-    with _sessions_lock:
-        _sessions.pop(session_id, None)
-    for directory in (UPLOAD_DIR, OUTPUT_DIR):
-        for ext in (".jpg", ".png"):
-            (directory / f"{session_id}{ext}").unlink(missing_ok=True)
-
 def _write_image(path, image):
     if not cv2.imwrite(str(path), image):
         raise HTTPException(500, "Failed to save image")
-
-
-def _thumbnail_b64(source, max_dim=480):
-    sh, sw = source.shape[:2]
-    scale = min(1.0, max_dim / max(sh, sw))
-    thumb = cv2.resize(source, (int(sw * scale), int(sh * scale)), interpolation=cv2.INTER_AREA)
-    return _encode_image_b64(thumb, ext=".jpg")
 
 
 
@@ -203,22 +187,6 @@ async def process_image(req: ProcessRequest):
     out_path = OUTPUT_DIR / f"{req.id}{ext}"
     _write_image(out_path, result)
 
-    history_filename = f"{req.id}{ext}"
-    _write_image(HISTORY_DIR / history_filename, result)
-
-    rh, rw = result.shape[:2]
-    history.add_entry(HISTORY_DIR, {
-        "id": req.id,
-        "created_at": history.now_iso(),
-        "mode": req.mode,
-        "upscaled": req.upscale,
-        "filename": history_filename,
-        "width": rw,
-        "height": rh,
-        "before_thumbnail": _thumbnail_b64(image),
-        "thumbnail": _thumbnail_b64(result),
-    })
-
     return {
         "id": req.id,
         "result": _encode_image_b64(result, ext=ext),
@@ -227,11 +195,10 @@ async def process_image(req: ProcessRequest):
 
 
 def _find_source_image_path(session_id):
-    for directory in (OUTPUT_DIR, HISTORY_DIR):
-        for ext in (".jpg", ".png"):
-            path = directory / f"{session_id}{ext}"
-            if path.exists():
-                return path
+    for ext in (".jpg", ".png"):
+        path = OUTPUT_DIR / f"{session_id}{ext}"
+        if path.exists():
+            return path
     return None
 
 
@@ -274,8 +241,6 @@ async def download(session_id: str, ext: str = "jpg", variant: str = "flattened"
 
     path = OUTPUT_DIR / f"{session_id}.{ext}"
     if not path.exists():
-        path = HISTORY_DIR / f"{session_id}.{ext}"
-    if not path.exists():
         raise HTTPException(404, "Result not found. Process the image first.")
     return FileResponse(path, filename=f"scanned_document.{ext}")
 
@@ -297,35 +262,54 @@ async def get_ocr(session_id: str):
 @app.get("/api/storage")
 async def get_storage_usage():
     total_bytes = 0
-    for directory in (UPLOAD_DIR, OUTPUT_DIR, HISTORY_DIR):
+    for directory in (UPLOAD_DIR, OUTPUT_DIR):
         for path in directory.rglob("*"):
             if path.is_file():
                 total_bytes += path.stat().st_size
     return {"bytes": total_bytes}
 
 
+@app.post("/api/export")
+async def export_image(file: UploadFile = File(...), ext: str = "pdf", variant: str = "flattened"):
+    if ext != "pdf":
+        raise HTTPException(400, "ext must be pdf")
+    if variant not in ("flattened", "searchable"):
+        raise HTTPException(400, "variant must be one of: flattened, searchable")
 
-@app.get("/api/history")
-async def get_history():
-    _cleanup_expired()
-    return {"entries": history.list_entries(HISTORY_DIR)}
+    contents = await file.read()
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "File too large (max 20MB)")
 
-@app.delete("/api/history/{entry_id}")
-async def delete_history_entry(entry_id: str):
-    removed = history.delete_entry(HISTORY_DIR, entry_id)
-    if not removed:
-        raise HTTPException(404, "History entry not found.")
-    _delete_transient_files(entry_id)
-    return {"status": "ok"}
+    arr = np.frombuffer(contents, dtype=np.uint8)
+    image = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if image is None:
+        raise HTTPException(400, "Could not decode image.")
 
+    tmp_path = UPLOAD_DIR / f"export_{uuid.uuid4().hex}.png"
+    try:
+        _write_image(tmp_path, image)
 
-@app.delete("/api/history")
-async def clear_history():
-    entry_ids = [entry["id"] for entry in history.list_entries(HISTORY_DIR)]
-    history.clear_all(HISTORY_DIR)
-    for entry_id in entry_ids:
-        _delete_transient_files(entry_id)
-    return {"status": "ok"}
+        if variant == "searchable":
+            if not ocr.is_available():
+                raise HTTPException(
+                    503,
+                    "Searchable PDF requires the OCR dependency (see requirements-ocr.txt); "
+                    "it isn't installed.",
+                )
+            ocr_result = ocr.extract_text(image)
+            pdf_bytes = pdf_export.build_searchable_pdf(tmp_path, ocr_result)
+        else:
+            buf = io.BytesIO()
+            Image.open(tmp_path).convert("RGB").save(buf, "PDF")
+            pdf_bytes = buf.getvalue()
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="scanned_document.pdf"'},
+    )
 
 
 @app.get("/")

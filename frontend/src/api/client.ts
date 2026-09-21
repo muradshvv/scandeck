@@ -1,4 +1,4 @@
-import type { EnhanceMode, HistoryEntry, OcrResult, ProcessResponse, UploadResponse } from '../types'
+import type { EnhanceMode, OcrResult, ProcessResponse, UploadResponse } from '../types'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 
@@ -45,19 +45,10 @@ export async function fetchOcrText(id: string): Promise<OcrResult> {
   return res.json()
 }
 
-export async function fetchHistory(): Promise<HistoryEntry[]> {
-  const res = await fetch(apiUrl('/api/history'))
-  if (!res.ok) throw new Error(await parseErrorDetail(res, 'Failed to load history'))
-  const body = await res.json()
-  return body.entries
-}
-
-export async function deleteHistoryEntry(id: string): Promise<void> {
-  const res = await fetch(apiUrl(`/api/history/${id}`), { method: 'DELETE' })
-  if (!res.ok) throw new Error(await parseErrorDetail(res, 'Failed to delete history entry'))
-}
-
-export async function clearHistory(): Promise<void> {
-  const res = await fetch(apiUrl('/api/history'), { method: 'DELETE' })
-  if (!res.ok) throw new Error(await parseErrorDetail(res, 'Failed to clear history'))
+export async function exportPdf(imageBlob: Blob, variant: 'flattened' | 'searchable'): Promise<Blob> {
+  const formData = new FormData()
+  formData.append('file', imageBlob, 'scan.png')
+  const res = await fetch(apiUrl(`/api/export?ext=pdf&variant=${variant}`), { method: 'POST', body: formData })
+  if (!res.ok) throw new Error(await parseErrorDetail(res, 'PDF export failed'))
+  return res.blob()
 }
