@@ -8,23 +8,6 @@ import { canvasToImage, upscaleTiled } from '../../lib/upscale'
 import type { AdjustParams } from '../../lib/imageAdjust'
 import type { OcrResult, ProcessResponse } from '../../types'
 
-async function toPngBlob(dataUrl: string): Promise<Blob> {
-  // ClipboardItem only accepts image/png, results are often jpeg
-  const img = new Image()
-  img.src = dataUrl
-  await new Promise((resolve, reject) => {
-    img.onload = resolve
-    img.onerror = reject
-  })
-  const canvas = document.createElement('canvas')
-  canvas.width = img.naturalWidth
-  canvas.height = img.naturalHeight
-  canvas.getContext('2d')!.drawImage(img, 0, 0)
-  return new Promise((resolve, reject) => {
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('toBlob failed'))), 'image/png')
-  })
-}
-
 type OcrState =
   | { status: 'idle' }
   | { status: 'loading' }
@@ -229,9 +212,16 @@ export function ResultStep({
     handleAiUpscale()
   }, [imgLoaded, autoAiUpscale, handleAiUpscale])
 
+  const canvasToBlob = (canvas: HTMLCanvasElement): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('toBlob failed'))), 'image/png')
+    })
+  }
+
   const handleCopy = async () => {
+    if (!canvasRef.current) return
     try {
-      const blob = await toPngBlob(result.result)
+      const blob = await canvasToBlob(canvasRef.current)
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
       showToast('Copied to clipboard')
     } catch {
@@ -239,15 +229,16 @@ export function ResultStep({
     }
   }
 
-  const handleViewFullSize = async () => {
-    try {
-      const res = await fetch(result.result)
-      const blob = await res.blob()
+  const handleViewFullSize = () => {
+    if (!canvasRef.current) return
+    canvasRef.current.toBlob((blob) => {
+      if (!blob) {
+        showToast('Could not open full size view', 'error')
+        return
+      }
       const url = URL.createObjectURL(blob)
       window.open(url, '_blank')
-    } catch {
-      showToast('Could not open full size view', 'error')
-    }
+    }, 'image/png')
   }
 
   return (

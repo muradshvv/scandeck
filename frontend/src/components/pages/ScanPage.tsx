@@ -40,7 +40,7 @@ export function ScanPage({
   }
 
   const handleConfirm = async () => {
-    const ok = await flow.confirm(settings.defaultMode, settings.upscaleEnabled)
+    const ok = await flow.confirm(settings.defaultMode, false)
     if (ok) showToast('Scan complete')
   }
 

@@ -126,8 +126,11 @@ exported from `ml/models/ultra_hd_upscaler.pt`) and runs it in the browser via
 tiles - each tile stays a constant shape regardless of position, and results
 are stitched back together - so memory use depends on tile size, not the
 source image's resolution, and nothing is ever downscaled before enhancing.
-`backend/app/scanner.py`'s `upscale_to_hd` only does a fast classical
-(non-AI) sharpen as an instant baseline while the AI pass runs.
+The AI pass runs on the true original scan resolution, not on any
+server-side enlargement - `backend/app/scanner.py`'s classical
+`upscale_to_hd` still exists but this toggle no longer triggers it, since
+chaining a classical enlarge before the AI pass just made the model refine
+already-interpolated pixels instead of real detail.
 
 Off by default; toggled in Settings.
 
